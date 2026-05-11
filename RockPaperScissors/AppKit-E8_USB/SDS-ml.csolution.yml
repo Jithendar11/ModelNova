@@ -11,20 +11,22 @@ solution:
 
   mlops:
     description: ML model for detecting Rock/Paper/Scissors images
-    npu: 
-      type: Ethos-U85           # select NPU as DFP has multiple
+    npu:
+      type: Ethos-U85 # select NPU as DFP has multiple
     vela:
-      system: RTSS_HE_SRAM_MRAM  # system configuration from INI file
-      memory: Shared_Sram        # memory configuration from INI file
-      misc:                   # string with additional options for Vela
+      system: RTSS_HE_SRAM_MRAM # system configuration from INI file
+      memory: Shared_Sram # memory configuration from INI file
+      ini: .cmsis/ensemble_vela.ini
+    #     misc: x # string with additional options for Vela
     model:
-      clayer: $AI-Layer$      # path to layer or variable
-      name: RPS               # optional model name (default Algorithm), serves as namespace
-    hardware:                 # hardware target for testing
-      target-type: AppKit-E8-U85  # explicit target-type name (default: first target-type)
-    simulator:                # simulator target for testing
-      target-type: SSE-320-U85   # explicit target-type name (default: last target-type, check if debugger name: Arm-FVP)
-      target-set: FVP-Test       # explicit target-set name (default: last target-type, first set: check if debugger name: Arm-FVP)
+      clayer: $AI-Layer$ # path to layer or variable
+      name: RPS # optional model name (default Algorithm), serves as namespace
+    hardware:
+      # hardware target for testing
+      target: AppKit-E8-U85@HIL # explicit target-type name (default: first target-type)
+    simulator:
+      # simulator target for testing
+      target: SSE-320-U85@FVP-Test # explicit target-type name (default: last target-type, check if debugger name: Arm-FVP)
 
   compiler: AC6 # select compiler for solution
 
@@ -65,7 +67,7 @@ solution:
           images:
             - project-context: AlgorithmTest.Debug
 
-    - type: SSE-320-U85  # Simulator (Cortex-M85 + Ethos-U85)
+    - type: SSE-320-U85 # Simulator (Cortex-M85 + Ethos-U85)
       board: SSE-320
       device: SSE-320-FVP
       define:
@@ -80,6 +82,8 @@ solution:
             name: Arm-FVP
             model: FVP_Corstone_SSE-320
             config-file: Board/Corstone-320/fvp_config.txt
+          images:
+            - project-context: AlgorithmTest.Debug
 
   # List of different build configurations.
   build-types:
