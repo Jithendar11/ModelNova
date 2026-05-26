@@ -14,7 +14,7 @@ sdsio:
     - 7: Flag 7
 
 # play:             # Playback script
-#   - step: "Playback: ML_In.0"
+#   - step: "Playback: ML_In.0.sds"
 #     labels: [ 0 ]
 #   - step: "Playback: ML_In.rock.1.sds + ML_In.rock.2.sds + ML_In.rock.3.sds"
 #     setflags: 0x02
