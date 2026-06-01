@@ -259,9 +259,10 @@ __NO_RETURN void sdsControlThread (void *argument) {
       default:                          // or unexpected state
         // Clear TERMINATE flag in sdsFlags
         sdsFlagsModify(0U, SDS_FLAG_TERMINATE);
+        sdsState = SDS_STATE_INACTIVE;
+
         // Send signal to terminate simulator or pyOCD
         putchar(0x04);
-        sdsState = SDS_STATE_INACTIVE;
         break;
     }
 

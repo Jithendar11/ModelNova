@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------
- * Copyright (c) 2025-2026 Arm Limited (or its affiliates).
+ * Copyright (c) 2025 Arm Limited (or its affiliates).
  * All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -26,7 +26,6 @@
 #else
 #include "Driver_USART.h"
 #endif
-#include "cmsis_os2.h"
 
 #ifndef RETARGET_STDIO_UART
 #error "RETARGET_STDIO_UART not defined!"
@@ -156,9 +155,7 @@ int stdin_getchar (void) {
     return -1;
   }
 
-  while (ptrUSART->GetStatus().rx_busy != 0U) {
-    osDelay(10U);
-  }
+  while (ptrUSART->GetStatus().rx_busy != 0U);
 
   return (int)buf[0];
 }
