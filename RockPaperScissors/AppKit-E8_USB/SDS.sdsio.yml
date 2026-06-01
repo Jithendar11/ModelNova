@@ -3,22 +3,29 @@ sdsio:
     usb:
   workdir: ./algorithm/SDS Recordings
   metadir: ./algorithm/SDS Recordings
-  flag-info:
-    - 0: Flag 0
-    - 1: Flag 1
-    - 2: Flag 2
-    - 3: Flag 3
-    - 4: Flag 4
-    - 5: Flag 5
-    - 6: Flag 6
-    - 7: Flag 7
 
-# play:             # Playback script
-#   - step: "Playback: ML_In.0.sds"
+  # Data stream information used by VS Code extension
+  streams:
+    - name: ML_In
+      view: video
+    - name: ML_Out
+      view: signal
+  
+  # Human readable labels for sdsFlag bits use by VS Code extension
+  flag-info:
+    - 0: INFERENCE START/STOP
+    - 1: HEALTH CHECK
+    - 2: CONNECTIVITY CHECK
+    - 3: INFERENCE TEST START/STOP
+    - 4: DATA CAPTURE START/STOP
+
+  # Defines a playback test sequence
+# play:
+#   - step: "Test 0: ML_In.0.sds"
 #     labels: [ 0 ]
-#   - step: "Playback: ML_In.rock.1.sds + ML_In.rock.2.sds + ML_In.rock.3.sds"
-#     setflags: 0x02
-#     clearflags: 0x01
+#   - step: "Test 1: ML_In.rock.1.sds + ML_In.rock.2.sds + ML_In.rock.3.sds"
+#     setflags: 0x01
+#     clearflags: 0x02
 #     labels: 
 #       - rock.1
 #       - rock.2
