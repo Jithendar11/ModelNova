@@ -26,6 +26,10 @@
 #include "sds_main.h"
 #include "sds_control.h"
 
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+#include "SEGGER_SYSVIEW.h"
+#endif
+
 
 // AlgorithmThread thread attributes
 osThreadAttr_t attrAlgorithmThread = {
@@ -278,6 +282,10 @@ __NO_RETURN void sdsControlThread (void *argument) {
 
 // Application main function: application entry point.
 int32_t app_main (void) {
+
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+  SEGGER_SYSVIEW_Conf();
+#endif
   osKernelInitialize();
   osThreadNew(sdsControlThread, NULL, &attr_sdsControlThread);
   osKernelStart();

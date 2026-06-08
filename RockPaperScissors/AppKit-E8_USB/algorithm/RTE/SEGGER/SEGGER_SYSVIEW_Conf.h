@@ -57,6 +57,9 @@ Additional information:
 * TODO: Add your defines here.                                       *
 **********************************************************************
 */
+#define SEGGER_SYSVIEW_RTT_CHANNEL      1
+#define SEGGER_SYSVIEW_START_ON_INIT    1
+#define SEGGER_SYSVIEW_CAN_RESTART      0
 
 
 #endif  // SEGGER_SYSVIEW_CONF_H

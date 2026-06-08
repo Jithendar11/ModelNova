@@ -29,6 +29,7 @@ project:
     - ET_NUM_INFERENCES: 1
     - ET_LOG_DUMP_OUTPUT
     - ET_DEBUG_BUFFER_SIZE: 0x8000 
+    - USE_SEGGER_SYSVIEW
 
   groups:
     - group: Documentation

@@ -32,6 +32,10 @@
 #include "model_pte.h"
 
 #ifndef  SIMULATOR
+#ifdef   USE_SEGGER_SYSVIEW
+#include "SEGGER_SYSVIEW.h"
+#include "sysview_markers.h"
+#endif
 #include "cmsis_vstream.h"
 #include "profiler.h"
 #endif
@@ -88,6 +92,14 @@ static void VideoOut_Event_Callback(uint32_t event) {
 int32_t InitAlgorithm (void) {
 
 #ifndef SIMULATOR
+#ifdef  USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_ALGORITHM,    "Algorithm");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_PRE_PROCESS,  "Pre-process");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_INFERENCE,    "Inference");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_POST_PROCESS, "Post-process");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_OUTPUT_DATA,  "Output Data");
+#endif
+
     /* ---- Video Output Stream ---- */
     if (vStream_VideoOut->Initialize(VideoOut_Event_Callback) != VSTREAM_OK) {
         printf("Failed to initialise video output driver\n");
@@ -161,22 +173,36 @@ int32_t ExecuteAlgorithm(uint8_t *in_buf, uint32_t in_num,
 #ifndef SIMULATOR
     vStreamStatus_t v_status;
     uint8_t        *outFrame;
+
+#ifdef USE_SEGGER_SYSVIEW
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_ALGORITHM);
+#endif
 #endif
 
     /* Clear output buffer */
     memset(out_buf, 0, out_num);
 
     /* ---- Pre-processing: HWC→CHW + ImageNet normalisation ---- */
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_PRE_PROCESS);
+#endif
 #if ENABLE_TIME_PROFILING
     uint32_t pre_process_time = profiler_start();
 #endif
 
     preprocess(in_buf);
 
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_PRE_PROCESS);
+#endif
 #if ENABLE_TIME_PROFILING
     pre_process_time = profiler_stop(pre_process_time);
     printf("Pre Processing time: %3.3f ms.\n",
            profiler_cycles_to_ms(pre_process_time, CPU_FREQ_HZ));
+#endif
+
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_INFERENCE);
 #endif
 
     /* ---- Inference ---- */
@@ -185,20 +211,37 @@ int32_t ExecuteAlgorithm(uint8_t *in_buf, uint32_t in_num,
         return -1;
     }
 
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_INFERENCE);
+#endif
+
     /* ---- Post-processing: decode output tensor into output_label ---- */
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_POST_PROCESS);
+#endif
 #if ENABLE_TIME_PROFILING
     uint32_t post_process_time = profiler_start();
 #endif
 
     postprocess(*ctx, in_buf, out_buf, out_num);
 
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_POST_PROCESS);
+#endif
 #if ENABLE_TIME_PROFILING
     post_process_time = profiler_stop(post_process_time);
     printf("Post Process time: %3.3f ms.\n",
            profiler_cycles_to_ms(post_process_time, CPU_FREQ_HZ));
 #endif
 
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_ALGORITHM);
+#endif
+
     /* ---- Display: copy ML frame to LCD framebuffer ---- */
+#if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_OUTPUT_DATA);
+#endif
 #if ENABLE_TIME_PROFILING
     uint32_t display_time = profiler_start();
 #endif
@@ -227,6 +270,9 @@ int32_t ExecuteAlgorithm(uint8_t *in_buf, uint32_t in_num,
         DISPLAY_FLIP_VERTICAL,
         DISPLAY_SWAP_RB);
 
+#ifdef USE_SEGGER_SYSVIEW
+    SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_OUTPUT_DATA);
+#endif
 #if ENABLE_TIME_PROFILING
     display_time = profiler_stop(display_time);
     printf("Display time: %3.3f ms.\n",

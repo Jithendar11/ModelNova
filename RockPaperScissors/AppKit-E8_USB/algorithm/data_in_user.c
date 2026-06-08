@@ -34,6 +34,11 @@
 #include "image_processing_func.h"
 
 #ifndef  SIMULATOR
+#ifdef   USE_SEGGER_SYSVIEW
+#include "SEGGER_SYSVIEW.h"
+#include "sysview_markers.h"
+#endif
+
 /* Reference to the underlying CMSIS vStream VideoIn driver */
 extern vStreamDriver_t          Driver_vStreamVideoIn;
 #define vStream_VideoIn       (&Driver_vStreamVideoIn)
@@ -76,6 +81,13 @@ void VideoOut_Event_Callback (uint32_t event) {
 int32_t InitInputData (void) {
 
 #ifndef SIMULATOR
+#ifdef  USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_INPUT_DATA,    "Input Data");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_CAPTURE_IMAGE, "Capture Image");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_CONVERT_IMAGE, "Convert Image");
+  SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_RESIZE_IMAGE,  "Resize Image");
+#endif
+
   tid_algo = osThreadGetId();
 
   /* Initialize Video Input Stream */
@@ -137,6 +149,14 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
     return -1;
   }
 
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_INPUT_DATA);
+#endif
+
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_CAPTURE_IMAGE);
+#endif
+
   /* Start video capture */
   if (vStream_VideoIn->Start(VSTREAM_MODE_SINGLE) != VSTREAM_OK) {
     SDS_PRINTF("Failed to start video capture\n");
@@ -153,8 +173,24 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
     return -1;
   }
 
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CAPTURE_IMAGE);
+#endif
+
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_CONVERT_IMAGE);
+#endif
+
   /* Convert input frame and place it into RGB_Image buffer */
   convert_frame_to_rgb(inFrame);
+
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CONVERT_IMAGE);
+#endif
+
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_RESIZE_IMAGE);
+#endif
 
   /* Resize RGB image to fit ML model expected size */
   crop_resize_rgb565_to_rgb888(inFrame,
@@ -164,11 +200,18 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
                                ML_IMAGE_WIDTH,
                                ML_IMAGE_HEIGHT);
 
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_RESIZE_IMAGE);
+#endif
 
   /* Release input frame */
   if (vStream_VideoIn->ReleaseBlock() != VSTREAM_OK) {
     SDS_PRINTF("Failed to release video input frame\n");
   }
+
+#ifdef USE_SEGGER_SYSVIEW
+  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_INPUT_DATA);
+#endif
 
   return ALGO_DATA_IN_BLOCK_SIZE;
 #else
