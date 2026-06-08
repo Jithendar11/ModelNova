@@ -48,9 +48,9 @@ solution:
           images:
             - project-context: AlgorithmTest.Debug
 
-    - type: AVH-SSE-320
-      board: ARM::SSE-320
-      device: ARM::SSE-320-FVP
+    - type: SSE-320-U85
+      board: SSE-320
+      device: SSE-320-FVP
       define:
         - SIMULATOR
       variables:
@@ -58,7 +58,7 @@ solution:
         - SDSIO-Layer: $SolutionDir()$/sdsio/fvp/sdsio_fvp.clayer.yml
         - AI-Layer: $SolutionDir()$/ai_layer/ai_layer.clayer.yml
       target-set:
-        - set: Arm-FVP
+        - set:
           images:
             - project-context: AlgorithmTest.Debug
           debugger:

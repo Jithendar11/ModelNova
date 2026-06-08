@@ -26,6 +26,7 @@
 
 import os
 import logging
+import logging.handlers
 from os import path
 import yaml
 
@@ -77,31 +78,89 @@ Data = bytearray()
 SDSIO_ERROR = (-1 & 0xFFFFFFFF)  # -1
 SDSIO_EOS   = (-7 & 0xFFFFFFFF)  # -7
 
-# VSI3 writes SDSIO logs to sdsio.log
+# VSI3 writes SDSIO logs to sdsio.log in the working directory
+# Early log records are buffered until the working directory is known
 logger = logging.getLogger("sdsio")
 logger.setLevel(logging.INFO)
 logger.propagate = False
 for _handler in logger.handlers[:]:
     logger.removeHandler(_handler)
     _handler.close()
-_log_handler = logging.FileHandler("sdsio.log", mode="w", encoding="utf-8")
-_log_handler.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(_log_handler)
+_log_buffer = logging.handlers.MemoryHandler(capacity=1000, flushLevel=100)
+_log_buffer.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_log_buffer)
 logger.info(f"Created by {path.abspath(__file__)}\n")
+
+def _get_non_negative_int(value, name: str):
+    try:
+        _value = int(value)
+    except (TypeError, ValueError):
+        logger.error(f"Invalid integer value for {name}: {value}.")
+        return None
+    if _value < 0:
+        logger.error(f"{name} must be 0 or greater.")
+        return None
+    return _value
+
+
+def _get_bool(value, name: str):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        _value = value.strip().lower()
+        if _value in ("true", "yes", "on", "1"):
+            return True
+        if _value in ("false", "no", "off", "0"):
+            return False
+    logger.error(f"Invalid boolean value for {name}: {value}.")
+    return False
+
 
 def _load_sdsio_server_config(base_dir: str):
     _cfg_path = None
-    _candidates = [
-        path.join(base_dir, "sdsio.yml"),
-        path.join(base_dir, "sdsio.yaml"),
-    ]
-    _candidates.extend(sorted(path.join(base_dir, _name) for _name in os.listdir(base_dir) if _name.endswith(".sdsio.yml")))
-    _candidates.extend(sorted(path.join(base_dir, _name) for _name in os.listdir(base_dir) if _name.endswith(".sdsio.yaml")))
 
-    for _candidate in _candidates:
-        if path.isfile(_candidate):
-            _cfg_path = _candidate
-            break
+    _env_fvp = os.environ.get("SDSIO_FVP")
+    if _env_fvp is not None:
+        logger.info(f"SDSIO_FVP environment variable: '{_env_fvp}'.")
+        if not path.isabs(_env_fvp):
+            logger.info(f"SDSIO_FVP is not an absolute path: '{_env_fvp}'. Ignoring.")
+            _env_fvp = None
+    else:
+        logger.info("SDSIO_FVP environment variable not set.")
+
+    if _env_fvp is not None:
+        if path.isfile(_env_fvp):
+            _cfg_path = _env_fvp
+        elif path.isdir(_env_fvp):
+            _env_candidates = [
+                path.join(_env_fvp, "sdsio.yml"),
+                path.join(_env_fvp, "sdsio.yaml"),
+            ]
+            _env_candidates.extend(sorted(path.join(_env_fvp, _name) for _name in os.listdir(_env_fvp) if _name.endswith(".sdsio.yml")))
+            _env_candidates.extend(sorted(path.join(_env_fvp, _name) for _name in os.listdir(_env_fvp) if _name.endswith(".sdsio.yaml")))
+            for _candidate in _env_candidates:
+                if path.isfile(_candidate):
+                    _cfg_path = _candidate
+                    break
+            if _cfg_path is None:
+                logger.info(f"No SDSIO YAML file found in SDSIO_FVP directory: '{_env_fvp}'. Falling back to default search.")
+        else:
+            logger.info(f"SDSIO_FVP path does not exist: '{_env_fvp}'. Falling back to default search.")
+
+    if _cfg_path is None:
+        _candidates = [
+            path.join(base_dir, "sdsio.yml"),
+            path.join(base_dir, "sdsio.yaml"),
+        ]
+        _candidates.extend(sorted(path.join(base_dir, _name) for _name in os.listdir(base_dir) if _name.endswith(".sdsio.yml")))
+        _candidates.extend(sorted(path.join(base_dir, _name) for _name in os.listdir(base_dir) if _name.endswith(".sdsio.yaml")))
+
+        for _candidate in _candidates:
+            if path.isfile(_candidate):
+                _cfg_path = _candidate
+                break
 
     _ctrl_data = {}
     if _cfg_path:
@@ -113,16 +172,24 @@ def _load_sdsio_server_config(base_dir: str):
         except Exception as _e:
             logger.error(f"Failed to load control YAML: {_e}")
 
-    if _ctrl_data:
-        logger.info(f"SDSIO configuration YAML: {_cfg_path}")
-
     _work_dir = _ctrl_data.get("workdir", base_dir) if _ctrl_data else base_dir
-    _work_dir = path.normpath(path.join(base_dir, _work_dir)) if not path.isabs(_work_dir) else path.normpath(_work_dir)
+    _cfg_base = path.dirname(_cfg_path) if _cfg_path else base_dir
+    _work_dir = path.normpath(path.join(_cfg_base, _work_dir)) if not path.isabs(_work_dir) else path.normpath(_work_dir)
     _play_list = _ctrl_data.get("play", None) if _ctrl_data else None
+    _write_flush_records = None
+    if _ctrl_data and _ctrl_data.get("write-flush-records") is not None:
+        _write_flush_records = _get_non_negative_int(_ctrl_data.get("write-flush-records"), "write-flush-records")
+    _verbose = False
+    if _ctrl_data and _ctrl_data.get("verbose") is not None:
+        _verbose = _get_bool(_ctrl_data.get("verbose"), "verbose")
+
+    logger.info(f"Working directory: {path.abspath(_work_dir)}.")
+    if _ctrl_data:
+        logger.info(f"SDSIO configuration YAML: {path.abspath(_cfg_path)}.")
 
     # auto-playback is always enabled on VSI
     _auto_playback = True
-    return _work_dir, _auto_playback, _play_list
+    return _work_dir, _auto_playback, _play_list, _write_flush_records, _verbose
 
 
 def _build_sdsio_request(command: int, sid: int = 0, argument: int = 0, data: bytes = b"") -> bytearray:
@@ -135,12 +202,21 @@ def _build_sdsio_request(command: int, sid: int = 0, argument: int = 0, data: by
     return _req
 
 logger.info(f"SDSIO VSI version {SDSIO_VSI_VERSION}")
-_work_dir, _auto_playback, _play_list = _load_sdsio_server_config(os.getcwd())
+_work_dir, _auto_playback, _play_list, _write_flush_records, _verbose = _load_sdsio_server_config(os.getcwd())
+logger.setLevel(logging.DEBUG if _verbose else logging.INFO)
+os.makedirs(_work_dir, exist_ok=True)
+_log_handler = logging.FileHandler(path.join(_work_dir, "sdsio.log"), mode="w", encoding="utf-8")
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+_log_buffer.setTarget(_log_handler)
+_log_buffer.close()  # flushes buffered records to _log_handler
+logger.removeHandler(_log_buffer)
+logger.addHandler(_log_handler)
 Stream = sdsio_manager(
     work_dir=_work_dir,
     auto_playback=_auto_playback,
     play_list=_play_list,
     mon_port=None,
+    write_flush_records=_write_flush_records,
     status_bar_factory=False,
     monitor_factory=False,
     control_input_factory=False,

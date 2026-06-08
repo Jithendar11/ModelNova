@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026 Arm Limited. All rights reserved.
+﻿# Copyright (c) 2025-2026 Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -51,6 +51,7 @@ SDS_FLAG_MASK_START        = (1 << 31)
 SDS_FLAG_MASK_CI_TERMINATE = (1 << 30)
 SDS_FLAG_MASK_PLAYBACK_MODE= (1 << 29)
 SDS_FLAG_MASK_ALIVE        = (1 << 28)
+SDS_FLAG_MASK_RESET        = (1 << 27)
 # ---------------------------------------------------------------------------- #
 #           Byte oriented in memory buffer with per-stream flow control        #
 # ---------------------------------------------------------------------------- #
@@ -217,13 +218,14 @@ class sdsio_manager:
         auto_playback=False,
         play_list: Optional[list] = None,
         mon_port: Optional[int] = None,
-        write_flush_size: int = 0,
+        write_flush_records: Optional[int] = None,
         status_bar_factory=None,
         monitor_factory=None,
         control_input_factory=None,
     ):
         self._stream_id = 0
         self._play_step_index = 0
+        self._rec_index = None      # recording session index (None = not yet determined)
         self._work_dir = path.normpath(work_dir)
         self._rec_dir = self._work_dir
         self.opened_streams = {}    # sid -> StreamInfo
@@ -251,7 +253,7 @@ class sdsio_manager:
         self._playback_mode = False
         self._play_list = play_list
         self._mon_port = mon_port
-        self._write_flush_size = write_flush_size
+        self._write_flush_records = write_flush_records
         # SDS Control Flags
         self.shutdown_requested = threading.Event()
         self._flags = sdsFlags(auto_playback)
@@ -266,7 +268,7 @@ class sdsio_manager:
             if control_input_factory is None:
                 control_input_factory = sdsControlInput
             if control_input_factory:
-                logger.info("Starting SDS Control Flags thread. R=record, P=playback, S/s=stop, X/x=terminate, A-H=set flags 0-7, a-h=clear flags 0-7.")
+                logger.info("SDSIO command input: R=Record, P=playback, S/s=stop, T/t=reset, X/x=exit, A-H=set flags 0-7, a-h=clear flags 0-7.")
                 self._ctrl_input = control_input_factory(self._flags, self._monitor, self.shutdown_requested)
 
         self._info_flags: int = 0
@@ -287,6 +289,16 @@ class sdsio_manager:
             self._status.stop()
             self._status = None
         self.clean()
+
+    def _format_path(self, p: str) -> str:
+        """Return path relative to work_dir when it doesn't escape it, else absolute."""
+        try:
+            _rel = path.relpath(p, self._work_dir)
+            if not _rel.startswith('..'):
+                return _rel
+        except ValueError:
+            pass  # different drives on Windows
+        return path.abspath(p)
 
     def _make_sds_file_path(self, name: str, label: str, mode: int) -> str:
         _suffix = ".p.sds" if mode == 1 and self._playback_mode else ".sds"
@@ -325,7 +337,7 @@ class sdsio_manager:
         try:
             if self._playback_mode:
                 # In playback mode, wait until label_list and timestamp_boundaries are populated
-                # timestamp_boundaries is generted when playback file is opened
+                # timestamp_boundaries is generated when playback file is opened
                 while not self._label_list or not self._timestamp_boundaries:
                     if stop_evt.is_set() or buf.eof:
                         return
@@ -336,24 +348,24 @@ class sdsio_manager:
                 if stop_evt.is_set():
                     break
 
-                # Check if sds file exsist. If so, rename it to *.bak
+                # Check if sds file exists. If so, rename it to *.bak
                 if path.exists(_sds_file_path):
                     if path.exists(_sds_file_path + ".bak"):
                         try:
                             os.remove(_sds_file_path + ".bak")
                         except Exception:
-                            logger.warning(f"Could not delete backup file '{_sds_file_path}.bak'")
+                            logger.warning(f"Could not delete backup file '{self._format_path(_sds_file_path)}.bak'.")
                     try:
                         os.rename(_sds_file_path, _sds_file_path + ".bak")
                     except Exception:
-                        logger.warning(f"Could not create backup for existing file '{_sds_file_path}'")
+                        logger.warning(f"Could not create backup for existing file '{self._format_path(_sds_file_path)}'")
 
                 _eof_reached = False
                 with open(_sds_file_path, "wb") as _file_obj:
-                    _bytes_since_flush = 0
+                    _records_since_flush = 0
                     if _index > 0:
                         # First file open was already notified in _open(); notify for subsequent files here
-                        logger.info(f"Record:   {_stream.name} ({_sds_file_path})")
+                        logger.info(f"Record:   {_stream.name} ({self._format_path(_sds_file_path)})")
                         if self._monitor:
                             self._monitor.send_open_msg(_sds_file_path, 1)
                         self.opened_streams[sid] = self.opened_streams[sid]._replace(file_idx=_index)
@@ -366,12 +378,12 @@ class sdsio_manager:
                             if _chunk:
                                 _data += _chunk
                             elif buf.eof:
-                                # Incomplete header at EOF — discard fragment and stop
+                                # Incomplete header at EOF - discard fragment and stop
                                 _data = bytearray()
                                 _eof_reached = True
                                 break
                             elif stop_evt.is_set():
-                                # Read timed out and stream was closed — no more data expected
+                                # Read timed out and stream was closed - no more data expected
                                 _data = bytearray()
                                 _eof_reached = True
                                 break
@@ -385,7 +397,7 @@ class sdsio_manager:
                             # Check if this record marks the boundary of the next label
                             if self._timestamp_boundaries and _index + 1 < len(self._timestamp_boundaries):
                                 if _timestamp == self._timestamp_boundaries[_index + 1]:
-                                    break  # keep data — it will be written to the next label file
+                                    break  # keep data - it will be written to the next label file
 
                             _needed = 8 + _data_block_size
                             if _data_sz < _needed:
@@ -394,12 +406,12 @@ class sdsio_manager:
                                 if _chunk:
                                     _data += _chunk
                                 elif buf.eof:
-                                    # Incomplete record at EOF — discard and stop
+                                    # Incomplete record at EOF - discard and stop
                                     _data = bytearray()
                                     _eof_reached = True
                                     break
                                 elif stop_evt.is_set():
-                                    # Read timed out and stream was closed — no more data expected
+                                    # Read timed out and stream was closed - no more data expected
                                     _data = bytearray()
                                     _eof_reached = True
                                     break
@@ -407,24 +419,25 @@ class sdsio_manager:
                             else:
                                 # Complete record: write and reset for next record
                                 _file_obj.write(_data)
-                                _bytes_since_flush += len(_data)
-                                if self._write_flush_size and _bytes_since_flush >= self._write_flush_size:
-                                    _file_obj.flush()
-                                    os.fsync(_file_obj.fileno())
-                                    _bytes_since_flush = 0
+                                _records_since_flush += 1
+                                if self._write_flush_records is not None:
+                                    if _records_since_flush >= self._write_flush_records:
+                                        _file_obj.flush()
+                                        os.fsync(_file_obj.fileno())
+                                        _records_since_flush = 0
                                 _data = bytearray()
-                    if self._write_flush_size and _bytes_since_flush:
+                    if self._write_flush_records is not None:
                         _file_obj.flush()
                         os.fsync(_file_obj.fileno())
                 # Last file close is handled in close(); send close only for non-last files
                 if not _eof_reached and _index < len(_stream.file_paths) - 1:
-                    logger.info(f"Closed:   {name} ({_sds_file_path})")
+                    logger.info(f"Closed:   {name} ({self._format_path(_sds_file_path)})")
                     if self._monitor:
                         self._monitor.send_close_msg(_sds_file_path)
                 if _eof_reached:
                     break
         except Exception:
-            logger.exception(f"Writer {sid} error")
+            logger.exception(f"Writer {sid} error.")
 
     def _file_read_worker(self, sid, name, buf: ByteStreamBuffer, stop_evt):
         _chunk_size = 128 * 1024
@@ -442,7 +455,7 @@ class sdsio_manager:
                             break  # EOF on this file, move to next label
                 # Close notifications are tracked via remaining_file_sizes in read(); last close is in close()
         except Exception:
-            logger.exception(f"Reader {sid} error")
+            logger.exception(f"Reader {sid} error.")
         finally:
             buf.set_eof()
 
@@ -474,11 +487,10 @@ class sdsio_manager:
         if self.opened_streams:
             return
         if self._has_next_auto_playback_step():
-            if self._flags.request_auto_playback_start():
-                logger.info(f"sdsControl: auto playback step {self._play_step_index}")
+            self._flags.request_auto_playback_start()
         elif self._flags.auto_playback and self._last_playback_stream_name:
             if self._flags.request_auto_playback_terminate():
-                logger.info("sdsControl: auto playback terminate")
+                logger.info("Playback complete - no more steps remaining.")
 
     def _open(self, mode, name):
         _cmd = CMD_OPEN
@@ -491,11 +503,11 @@ class sdsio_manager:
 
         # validate name
         if len(name) == 0:
-            logger.info(f"Invalid stream name: {name}")
+            logger.info(f"Invalid stream name: {name}.")
             return _resp_err
         _invalid_chars = [chr(_i) for _i in range(0x00, 0x10)] + [chr(0x7F), '"', '*', '/', ':', '<', '>', '?', '\\', '|']
         if any(_ch in name for _ch in _invalid_chars):
-            logger.info(f"Invalid stream name: {name}")
+            logger.info(f"Invalid stream name: {name}.")
             return _resp_err
 
         # ensure not already open
@@ -514,6 +526,9 @@ class sdsio_manager:
                 if self._play_list:
                     if self._play_step_index < len(self._play_list):
                         _step = self._play_list[self._play_step_index]
+                        _step_desc = _step.get('step', '')
+                        _desc_suffix = f": {_step_desc}" if _step_desc else ""
+                        logger.info(f"Playback step {self._play_step_index + 1}/{len(self._play_list)}{_desc_suffix}.")
                         _set_flags = _step.get('setflags', 0)
                         _clear_flags = _step.get('clearflags', 0)
                         _recdir = _step.get('recdir', None)
@@ -529,7 +544,7 @@ class sdsio_manager:
                     _clear_flags = 0
 
                 if _set_flags or _clear_flags:
-                    logger.debug(f"Applying flags for playback stream '{name}': set=0x{_set_flags:08X}, clear=0x{_clear_flags:08X}")
+                    logger.debug(f"Applying flags for playback stream '{name}': set=0x{_set_flags:08X}, clear=0x{_clear_flags:08X}.")
                     self._flags.apply(_set_flags, _clear_flags)
 
                 # Create label list
@@ -551,18 +566,24 @@ class sdsio_manager:
         if mode == 1:
             if not self._label_list:
                 if not self._playback_mode:
-                    # find first available numeric label for new recording
-                    _idx = 0
-                    _sds_file_path = self._make_sds_file_path(name, str(_idx), mode)
-                    while path.exists(_sds_file_path):
-                        _idx += 1
+                    # find index for new recording session
+                    if self._rec_index is None:
+                        # first session: scan from 0 to find first unused index
+                        _idx = 0
                         _sds_file_path = self._make_sds_file_path(name, str(_idx), mode)
-                    self._label_list.append(str(_idx))
+                        while path.exists(_sds_file_path):
+                            _idx += 1
+                            _sds_file_path = self._make_sds_file_path(name, str(_idx), mode)
+                        self._rec_index = _idx
+                    else:
+                        # subsequent sessions: increment from previous
+                        self._rec_index += 1
+                    self._label_list.append(str(self._rec_index))
 
             _file_paths = self._build_stream_file_paths(name, mode)
             # validate if recdir exsist
             if _file_paths and not path.exists(path.dirname(_file_paths[0])):
-                logger.error(f"Recording directory does not exist for stream '{name}': {path.dirname(_file_paths[0])}")
+                logger.error(f"Recording directory does not exist for stream '{name}': {self._format_path(path.dirname(_file_paths[0]))}")
                 return _resp_err
 
             # allocate new sid
@@ -583,7 +604,7 @@ class sdsio_manager:
             self._write_stop[_sid]   = _stop_evt
             # Notify monitor for the first file; subsequent files are notified in the write worker
             if _file_paths:
-                logger.info(f"Record:   {name} ({_file_paths[0]})")
+                logger.info(f"Record:   {name} ({self._format_path(_file_paths[0])})")
                 if self._monitor:
                     self._monitor.send_open_msg(_file_paths[0], 1)
 
@@ -592,7 +613,7 @@ class sdsio_manager:
             # Validate that files for all labels exist
             for _sds_file_path in _file_paths:
                 if not path.exists(_sds_file_path):
-                    logger.error(f"Missing file for playback stream '{name}': {_sds_file_path}")
+                    logger.error(f"Missing file for playback stream '{name}': {self._format_path(_sds_file_path)}")
                     return _resp_err
 
             if not self._timestamp_boundaries:
@@ -621,7 +642,7 @@ class sdsio_manager:
             self._read_stop[_sid]  = _stop_evt
             # Notify monitor for the first file; subsequent files are notified in the read worker
             if _file_paths:
-                logger.info(f"Playback: {name} ({_file_paths[0]})")
+                logger.info(f"Playback: {name} ({self._format_path(_file_paths[0])})")
                 if self._monitor:
                     self._monitor.send_open_msg(_file_paths[0], 0)
             self._last_playback_stream_name = name
@@ -652,7 +673,7 @@ class sdsio_manager:
                 _last_idx = _last_stream.file_idx
                 if _last_idx < len(_last_stream.file_paths):
                     _sds_file_path = _last_stream.file_paths[_last_idx]
-                    logger.info(f"Closed:   {_name} ({_sds_file_path})")
+                    logger.info(f"Closed:   {_name} ({self._format_path(_sds_file_path)})")
                     if self._monitor:
                         self._monitor.send_close_msg(_sds_file_path)
             self._write_threads.pop(sid)
@@ -667,7 +688,7 @@ class sdsio_manager:
                 _last_idx = _last_stream.file_idx
                 if _last_idx < len(_last_stream.file_paths):
                     _sds_file_path = _last_stream.file_paths[_last_idx]
-                    logger.info(f"Closed:   {_name} ({_sds_file_path})")
+                    logger.info(f"Closed:   {_name} ({self._format_path(_sds_file_path)})")
                     if self._monitor:
                         self._monitor.send_close_msg(_sds_file_path)
             self._read_buffers.pop(sid)
@@ -689,7 +710,7 @@ class sdsio_manager:
         _resp = bytearray()
         _buf = self._write_buffers.get(sid)
         if not _buf:
-            logger.info(f"Not opened for write: {sid}")
+            logger.info(f"Not opened for write: {sid}.")
             return _resp
         _buf.write(data)
 
@@ -740,7 +761,7 @@ class sdsio_manager:
                         if _stream.file_paths and _f_idx < len(_stream.file_paths) - 1:
                             # Non-last file fully drained: report close and advance to next file
                             _sds_file_path = _stream.file_paths[_f_idx]
-                            logger.info(f"Closed:   {_stream.name} ({_sds_file_path})")
+                            logger.info(f"Closed:   {_stream.name} ({self._format_path(_sds_file_path)})")
                             if self._monitor:
                                 self._monitor.send_close_msg(_sds_file_path)
                             self.opened_streams[sid] = self.opened_streams[sid]._replace(file_idx=_f_idx + 1)
@@ -748,7 +769,7 @@ class sdsio_manager:
                             if _next_idx < len(_stream.file_paths):
                                 # First file open was already notified in _open(); notify for subsequent files here
                                 _sds_file_path = _stream.file_paths[_next_idx]
-                                logger.info(f"Playback: {_stream.name} ({_sds_file_path})")
+                                logger.info(f"Playback: {_stream.name} ({self._format_path(_sds_file_path)})")
                                 if self._monitor:
                                     self._monitor.send_open_msg(_sds_file_path, 0)
                             continue
@@ -781,11 +802,11 @@ class sdsio_manager:
         self._flags.update_from_target(flags)
         self._request_auto_playback_if_needed(flags)
         if self._info_flags != flags:
-            logger.info(f"sdsFlags = 0x{flags:08X}")
+            logger.info(f"sdsFlags = 0x{flags:08X}.")
             self._info_flags = flags
         if idle_rate and self._info_IdleRate != idle_rate:
             if idle_rate != 0xFFFFFFFF:
-                logger.info(f"{idle_rate}% idle")
+                logger.info(f"{idle_rate}% idle.")
             self._info_IdleRate = idle_rate
         if err_data:
             _status = int.from_bytes(err_data[0:4],'little')
@@ -855,5 +876,5 @@ class sdsio_manager:
             return self._info(_flags, _idle_rate, _err_data)
 
         else:
-            logger.error(f"=== FATAL ERROR === : Data integrity error - protocol mismatch. Restart the SDSIO Client.")
+            logger.error(f"=== FATAL ERROR === : Data integrity error - protocol mismatch. Restart the SDSIO-Client.")
             return bytearray()
