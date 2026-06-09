@@ -27,6 +27,7 @@
 #endif
 
 #include "sds.h"
+#include "sds_main.h"
 #include "algorithm_config.h"
 #include "data_in.h"
 
@@ -137,6 +138,7 @@ void DiscardInputData (void) {
 */
 int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
 #ifndef SIMULATOR
+  int32_t  ret;
   uint8_t *inFrame;
 
   // Check input parameters
@@ -171,6 +173,21 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
   if (inFrame == NULL) {
     SDS_PRINTF("Failed to get video input frame\n");
     return -1;
+  }
+
+  if ((record_camera != 0U) && (sds_state == SDS_STATE_ACTIVE)) {
+    // If recording of images captured by camera is active, use image recording timeslot
+    // as reference timeslot for algorithm input and output data
+    timeslot = osKernelGetTickCount();
+
+    // Record raw captured image
+    do {
+      ret = sdsWrite(sds_camera_id, timeslot, CAM_Frame, sizeof(CAM_Frame));
+      if (ret == SDS_NO_SPACE) {
+        osDelay(10U);
+      }
+    } while (ret == SDS_NO_SPACE);
+    SDS_ASSERT(ret == sizeof(CAM_Frame));
   }
 
 #ifdef USE_SEGGER_SYSVIEW

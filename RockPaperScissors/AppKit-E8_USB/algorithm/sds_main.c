@@ -22,17 +22,29 @@
 #include "algorithm_config.h"
 #include "algorithm.h"
 #include "data_in.h"
+#include "app_setup.h"
 
+
+// SDS system state consistent with main AlgorithmThread loop
+uint32_t sds_state = SDS_STATE_INACTIVE;
+
+// Timeslot information
+uint32_t timeslot = 0U;
+
+// Flag indicating whether images captured by camera are being recorded
+uint8_t record_camera = 0U;
 
 // Algorithm input/output data buffer
 static uint8_t algo_data_in_buf [ALGO_DATA_IN_BLOCK_SIZE]  __ALIGNED(4);
 static uint8_t algo_data_out_buf[ALGO_DATA_OUT_BLOCK_SIZE] __ALIGNED(4);
 
 // SDS buffers
-static uint8_t sds_data_in_buf [((ALGO_DATA_IN_BLOCK_SIZE  * 2) + 2048)] __ALIGNED(4);
-static uint8_t sds_data_out_buf[((ALGO_DATA_OUT_BLOCK_SIZE * 2) + 2048)] __ALIGNED(4);
+static uint8_t sds_camera_buf  [CAMERA_FRAME_SIZE              + 2048] __ALIGNED(4);
+static uint8_t sds_data_in_buf [ALGO_DATA_IN_BLOCK_SIZE        + 2048] __ALIGNED(4);
+static uint8_t sds_data_out_buf[(ALGO_DATA_OUT_BLOCK_SIZE * 2) + 2048] __ALIGNED(4);
 
-// SDS identifiers
+// SDS stream identifiers
+       sdsId_t sds_camera_id   = NULL;
 static sdsId_t sds_data_in_id  = NULL;
 static sdsId_t sds_data_out_id = NULL;
 
@@ -49,6 +61,7 @@ static const char *SDS_MODE[] = { "recording", "playback" };
 int32_t OpenStreams (void) {
   int32_t status = 0;
   uint8_t play = 0U;
+  uint8_t camera_fail = 0U;
 
   if ((sdsFlags & SDS_FLAG_PLAYBACK) != 0U) {   // If open for playback requested
     play = 1U;
@@ -62,6 +75,17 @@ int32_t OpenStreams (void) {
     // Check https://arm-software.github.io/SDS-Framework/main/theory.html#filenames for details on playback filename
     sds_data_in_id = sdsOpen("ML_In", sdsModeRead, sds_data_in_buf, sizeof(sds_data_in_buf));
   } else {                                      // -- Recording
+    if ((sdsFlags & 0x01U) != 0U) {
+      // If sdsFlag.0 is set then record also images captured by camera
+      record_camera = 1U;
+      sds_camera_id = sdsOpen("Camera", sdsModeWrite, sds_camera_buf, sizeof(sds_camera_buf));
+      SDS_ASSERT(sds_camera_id != NULL);
+      if (sds_camera_id == NULL) {
+        camera_fail = 1U;
+      }
+    } else {
+      record_camera = 0U;
+    }
     sds_data_in_id = sdsOpen("ML_In", sdsModeWrite, sds_data_in_buf, sizeof(sds_data_in_buf));
   }
   // Open stream for recording of output data
@@ -72,7 +96,7 @@ int32_t OpenStreams (void) {
   SDS_ASSERT(sds_data_in_id  != NULL);
   SDS_ASSERT(sds_data_out_id != NULL);
 
-  if ((sds_data_in_id != NULL) && (sds_data_out_id != NULL)) {
+  if ((camera_fail == 0U) && (sds_data_in_id != NULL) && (sds_data_out_id != NULL)) {
     SDS_PRINTF("==== SDS %s started\n", SDS_MODE[play]);
   } else {
     sdsState = SDS_STATE_END;       // If files could not be opened then request streaming end
@@ -97,17 +121,31 @@ int32_t CloseStreams (void) {
     play = 1U;
   }
 
-  close_status = sdsClose(sds_data_in_id);
-  SDS_ERROR_CHECK(close_status);
-  if (close_status == SDS_OK) {
+  if (sds_camera_id != NULL) {
+    close_status = sdsClose(sds_camera_id);
+    SDS_ERROR_CHECK(close_status);
+    if (close_status != SDS_OK) {
+      status = -1;
+    }
+  }
+  if (sds_data_in_id != NULL) {
+    close_status = sdsClose(sds_data_in_id);
+    SDS_ERROR_CHECK(close_status);
+    if (close_status != SDS_OK) {
+      status = -1;
+    }
+  }
+  if (sds_data_out_id != NULL) {
     close_status = sdsClose(sds_data_out_id);
     SDS_ERROR_CHECK(close_status);
+    if (close_status != SDS_OK) {
+      status = -1;
+    }
   }
 
-  if (close_status == SDS_OK) {
+  if (status == 0U) {
     SDS_PRINTF("==== SDS %s stopped\n", SDS_MODE[play]);
   } else {
-    status = -1;
     SDS_PRINTF("==== SDS %s stop failed\n", SDS_MODE[play]);
   }
 
@@ -117,8 +155,7 @@ int32_t CloseStreams (void) {
 
 // Algorithm Thread function
 __NO_RETURN void AlgorithmThread (void *argument) {
-  uint32_t sds_state, sds_flags;
-  uint32_t timeslot;
+  uint32_t sds_flags;
   int32_t  ret;
   (void)argument;
 
@@ -173,7 +210,10 @@ __NO_RETURN void AlgorithmThread (void *argument) {
       }
 
       if (sds_state == SDS_STATE_ACTIVE) {
-        timeslot = osKernelGetTickCount();
+        if (record_camera == 0U) {
+          // If recording of images captured by camera is not active then use current timeslot
+          timeslot = osKernelGetTickCount();
+        }
 
         // Record algorithm input data
         do {
@@ -194,7 +234,12 @@ __NO_RETURN void AlgorithmThread (void *argument) {
 
     if (sds_state == SDS_STATE_ACTIVE) {
       // Record algorithm output data
-      ret = sdsWrite(sds_data_out_id, timeslot, algo_data_out_buf, sizeof(algo_data_out_buf));
+      do {
+        ret = sdsWrite(sds_data_out_id, timeslot, algo_data_out_buf, sizeof(algo_data_out_buf));
+        if (ret == SDS_NO_SPACE) {
+          osDelay(10U);
+        }
+      } while (ret == SDS_NO_SPACE);
       SDS_ASSERT(ret == sizeof(algo_data_out_buf));
     }
   }
