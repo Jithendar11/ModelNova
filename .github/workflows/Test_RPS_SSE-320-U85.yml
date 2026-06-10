@@ -55,8 +55,8 @@ jobs:
       - name: Add Beta packs
         working-directory: ./
         run: |
-          cpackget add ./packs/PyTorch.ExecuTorch.1.1.0-rc1-build.12/PyTorch.ExecuTorch.pdsc  |
-          cpackget add ./packs/AlifSemiconductor.Ensemble.2.2.0-dev8+g560eb47.pack
+          cpackget add ./packs/PyTorch.ExecuTorch.1.1.0-rc1-build.12/PyTorch.ExecuTorch.pdsc --agree-embedded-license |
+          cpackget add ./packs/AlifSemiconductor.Ensemble.2.2.0-dev8+g560eb47.pack --agree-embedded-license
 
       - name: Build the target-set
         working-directory: ./RockPaperScissors/AppKit-E8_USB
@@ -71,6 +71,6 @@ jobs:
       - name: Upload output of the built target-set
         uses: actions/upload-artifact@v7
         with:
-          name: RPS_AppKit-E8-U85_HIL
+          name: RPS_SSE-320-U85_FVP
           path: |
             ./RockPaperScissors/AppKit-E8_USB/out
