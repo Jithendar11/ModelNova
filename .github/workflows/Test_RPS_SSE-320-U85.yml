@@ -73,4 +73,6 @@ jobs:
         with:
           name: RPS_SSE-320-U85_FVP
           path: |
-            ./RockPaperScissors/AppKit-E8_USB/out
+            ./RockPaperScissors/AppKit-E8_USB/out  |
+            ./RockPaperScissors/AppKit-E8_USB/algorithm/SDS Recordings/*.p.sds   |
+            ./RockPaperScissors/AppKit-E8_USB/algorithm/SDS Recordings/sdsio.log |
