@@ -71,16 +71,18 @@ int32_t OpenStreams (void) {
   }
 
   // Open stream for playback or recording of input data, depending on the mode
+  record_camera = 0U;
   if (play != 0U) {                             // -- Playback
     // Check https://arm-software.github.io/SDS-Framework/main/theory.html#filenames for details on playback filename
     sds_data_in_id = sdsOpen("ML_In", sdsModeRead, sds_data_in_buf, sizeof(sds_data_in_buf));
   } else {                                      // -- Recording
     if ((sdsFlags & 0x01U) != 0U) {
       // If sdsFlag.0 is set then record also images captured by camera
-      record_camera = 1U;
       sds_camera_id = sdsOpen("Camera", sdsModeWrite, sds_camera_buf, sizeof(sds_camera_buf));
       SDS_ASSERT(sds_camera_id != NULL);
-      if (sds_camera_id == NULL) {
+      if (sds_camera_id != NULL) {
+        record_camera = 1U;
+      } else {
         camera_fail = 1U;
       }
     } else {
