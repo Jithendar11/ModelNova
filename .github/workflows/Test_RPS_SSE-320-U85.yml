@@ -71,7 +71,7 @@ jobs:
       - name: Run on FVP
         working-directory: ./RockPaperScissors/AppKit-E8_USB
         run: |
-          FVP_Corstone_SSE-320 -f Board/Corstone-320/fvp_config.txt -a out/AlgorithmTest/SSE-320-U85/Debug/AlgorithmTest.hex
+          FVP_Corstone_SSE-320 -f Board/Corstone-320/fvp_config.txt -a out/AlgorithmTest/SSE-320-U85/Debug/AlgorithmTest.axf
 
       - name: Upload output of the built target-set
         uses: actions/upload-artifact@v7
