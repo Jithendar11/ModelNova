@@ -24,7 +24,7 @@ on:
 
 jobs:
   CI:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -80,7 +80,7 @@ jobs:
       - name: Print log file of the FVP VSI3 SDSIO service
         working-directory: ./RockPaperScissors/AppKit-E8_USB
         run: |
-          type "./algorithm/SDS Recordings/sdsio.log"
+          cat "./algorithm/SDS Recordings/sdsio.log"
 
       - name: Upload output of the built target-set
         uses: actions/upload-artifact@v7
