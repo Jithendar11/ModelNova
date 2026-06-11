@@ -24,7 +24,7 @@ on:
 
 jobs:
   CI:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -71,11 +71,11 @@ jobs:
       - name: Run on FVP
         working-directory: ./RockPaperScissors/AppKit-E8_USB
         run: |
-          FVP_Corstone_SSE-320 -f Board/Corstone-320/fvp_config.txt -a out/AlgorithmTest/SSE-320-U85/Debug/AlgorithmTest.axf --simlimit 120 || true
+          FVP_Corstone_SSE-320 -f ./Board/Corstone-320/fvp_config.txt -a ./out/AlgorithmTest/SSE-320-U85/Debug/AlgorithmTest.axf --simlimit 120 || true
 
-      - name: Print log file of the FVP VSI3 SDSIO service
-        run: |
-          cat './RockPaperScissors/AppKit-E8_USB/algorithm/SDS Recordings/sdsio.log'
+#     - name: Print log file of the FVP VSI3 SDSIO service
+#       run: |
+#         cat './RockPaperScissors/AppKit-E8_USB/algorithm/SDS Recordings/sdsio.log'
 
       - name: Upload output of the built target-set
         uses: actions/upload-artifact@v7
