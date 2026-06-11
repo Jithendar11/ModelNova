@@ -83,6 +83,9 @@ int32_t InitInputData (void) {
 
 #ifndef SIMULATOR
 #ifdef  USE_SEGGER_SYSVIEW
+  // Set an initial marker with ID 0xFF to initialize marker tracking. This marker is ignored by SystemView.
+  SEGGER_SYSVIEW_NameMarker(0xFFU,                        "Reserved");
+
   SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_INPUT_DATA,    "Input Data");
   SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_CAPTURE_IMAGE, "Capture Image");
   SEGGER_SYSVIEW_NameMarker(SYSVIEW_MARKER_CONVERT_IMAGE, "Convert Image");
