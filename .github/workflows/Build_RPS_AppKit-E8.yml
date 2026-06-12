@@ -14,7 +14,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-name: Build RPS for AppKit-E8 Hardware
+name: Build RPS for AppKit-E8 Hardware v3
 on:
   workflow_dispatch:
   pull_request:
