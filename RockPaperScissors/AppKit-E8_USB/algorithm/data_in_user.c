@@ -60,7 +60,7 @@ void VideoIn_Event_Callback (uint32_t event) {
 
   if (event & VSTREAM_EVENT_DATA) {
     /* Video frame is available in camera frame buffer */
-    osThreadFlagsSet(tid_algo, 0x1);
+    osThreadFlagsSet(tid_algo, 0x01U);
   }
 }
 
@@ -113,7 +113,7 @@ void DiscardInputData (void) {
   uint32_t flags = osThreadFlagsWait(0x01U, osFlagsWaitAny, 0U);
 
   if (((flags & osFlagsError) == 0U) && // If not an error and
-      ((flags & 0x01)         != 0U)) { // if flag is set
+      ((flags & 0x01U)        != 0U)) { // if flag is set
 
     /* Release video input frame */
     if (vStream_VideoIn->ReleaseBlock() != VSTREAM_OK) {
@@ -159,7 +159,7 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
   }
 
   /* Wait for new video input frame */
-  osThreadFlagsWait(0x1, osFlagsWaitAny, osWaitForever);
+  osThreadFlagsWait(0x01U, osFlagsWaitAny, osWaitForever);
 
     /* Get input video frame buffer */
   inFrame = (uint8_t *)vStream_VideoIn->GetBlock();
