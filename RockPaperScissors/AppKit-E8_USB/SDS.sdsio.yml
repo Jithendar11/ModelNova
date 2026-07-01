@@ -20,10 +20,9 @@ sdsio:
   # Defines a playback test sequence
   play:
     - step: "Test 0: ML_In.0.sds"
-      labels:
-        - "0"
+      labels: [ "0" ]
     - step: "Test 1: ML_In.rock.1.sds + ML_In.rock.2.sds + ML_In.rock.3.sds"
       labels: 
-        - rock.1
-        - rock.2
-        - rock.3
+        - "rock.1"
+        - "rock.2"
+        - "rock.3"
