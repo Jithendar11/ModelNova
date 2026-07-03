@@ -10,7 +10,7 @@ cbuild-mlops:
     ini: .cmsis/ensemble_vela.ini
     options: --accelerator-config ethos-u85-256 --system-config RTSS_HE_SRAM_MRAM --memory-mode Shared_Sram
   model:
-    clayer: ai_layer/ai_layer.clayer.yml
+    clayer: algorithm/ML/ai_layer/ai_layer.clayer.yml
     name: RPS
   hardware:
     active: AppKit-E8-U85@HIL

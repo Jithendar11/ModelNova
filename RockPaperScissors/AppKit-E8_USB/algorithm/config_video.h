@@ -29,7 +29,7 @@
 //  <i> Common camera frame widths: 320, 640, 1024, 1280.
 //  <i> Default: 640
 #ifndef CAMERA_FRAME_WIDTH
-#define CAMERA_FRAME_WIDTH          1280
+#define CAMERA_FRAME_WIDTH          640
 #endif
 
 //  <o>Camera Frame Height
@@ -37,7 +37,7 @@
 //  <i> Common camera frame heights: 240, 480, 600, 720.
 //  <i> Default: 480
 #ifndef CAMERA_FRAME_HEIGHT
-#define CAMERA_FRAME_HEIGHT         720
+#define CAMERA_FRAME_HEIGHT         480
 #endif
 
 //  <o>Frame Type <0=>RAW8 <1=>RGB565 <2=>RGB888
@@ -150,6 +150,12 @@
 //  <i> Default: 1
 #ifndef DISPLAY_SWAP_RB
 #define DISPLAY_SWAP_RB            1
+#endif
+
+//  <o>Display Square Dimension
+//  <i> Define the dimension of the largest square that can fit in the display.
+#ifndef DISPLAY_SQUARE_DIM
+#define DISPLAY_SQUARE_DIM         ((DISPLAY_FRAME_WIDTH < DISPLAY_FRAME_HEIGHT) ? DISPLAY_FRAME_WIDTH : DISPLAY_FRAME_HEIGHT)
 #endif
 
 // </h>

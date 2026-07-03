@@ -223,7 +223,7 @@ int32_t ExecuteAlgorithm(uint8_t *in_buf, uint32_t in_num,
     uint32_t post_process_time = profiler_start();
 #endif
 
-    postprocess(*ctx, in_buf, out_buf, out_num);
+    postprocess(*ctx, in_buf, IMAGE_WIDTH, IMAGE_HEIGHT, out_buf, out_num);
 
 #if !defined(SIMULATOR) && defined(USE_SEGGER_SYSVIEW)
     SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_POST_PROCESS);
@@ -258,14 +258,28 @@ int32_t ExecuteAlgorithm(uint8_t *in_buf, uint32_t in_num,
         return -1;
     }
 
-    image_copy_to_framebuffer(
+    /* Render centered square image on LCD to avoid stretch artifacts. */
+    const uint32_t square_dim = DISPLAY_SQUARE_DIM;
+    const uint32_t square_x = (DISPLAY_FRAME_WIDTH - square_dim) / 2U;
+    const uint32_t square_y = (DISPLAY_FRAME_HEIGHT - square_dim) / 2U;
+
+    /* Keep letterbox bars black. */
+    static bool frame_cleared_once = false;
+    if (!frame_cleared_once) {
+        memset(outFrame, 0, DISPLAY_FRAME_WIDTH * DISPLAY_FRAME_HEIGHT * IMAGE_CHANNELS);
+        frame_cleared_once = true;
+    }
+
+    FastResizeRgb888ToWindow(
         in_buf,
-        IMAGE_WIDTH,  IMAGE_HEIGHT,
+        IMAGE_WIDTH,
+        IMAGE_HEIGHT,
         outFrame,
-        DISPLAY_FRAME_WIDTH, DISPLAY_FRAME_HEIGHT,
-        (DISPLAY_FRAME_WIDTH  - IMAGE_WIDTH)  / 2,
-        (DISPLAY_FRAME_HEIGHT - IMAGE_HEIGHT) / 2,
-        IMAGE_FORMAT_RGB888,
+        DISPLAY_FRAME_WIDTH,
+        square_x,
+        square_y,
+        square_dim,
+        square_dim,
         DISPLAY_FLIP_HORIZONTAL,
         DISPLAY_FLIP_VERTICAL,
         DISPLAY_SWAP_RB);

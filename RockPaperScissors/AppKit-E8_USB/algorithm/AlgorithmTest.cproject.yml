@@ -23,7 +23,6 @@ project:
   define:
     - OS_IDLE_THREAD_NAME: \"Idle\"
     - OS_TIMER_THREAD_NAME: \"Timer\"
-    - ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE: 0x100000
     - ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE: 0x100000
     - C10_USING_CUSTOM_GENERATED_MACROS
     - ET_NUM_INFERENCES: 1
@@ -31,6 +30,17 @@ project:
     - ET_DEBUG_BUFFER_SIZE: 0x8000 
     - USE_PERFORMANCE_MONITOR
     - USE_SEGGER_SYSVIEW
+
+  setups:
+    - setup: Scratch pool for non-simulator
+      not-for-context: +SSE-320-U85
+      define:
+        - ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE: 0x172000
+
+    - setup: Scratch pool for simulator
+      for-context: +SSE-320-U85
+      define:
+        - ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE: 0x253000
 
   groups:
     - group: Documentation
@@ -47,11 +57,7 @@ project:
         - file: arm_memory_allocator.cc
         - file: arm_executor_runner.cc
         - file: arm_executor_runner.h
-        - file: arm_perf_monitor.cpp
-        - file: arm_perf_monitor.h
         - file: sysview_log.c
-        - file: image_processing_func.c
-        - file: image_processing_func.h
 
   components:
     - component: CMSIS:OS Tick:SysTick
@@ -67,6 +73,10 @@ project:
       type:  Board
     - layer: $AI-Layer$
       type:  AI
+    - layer: ML/ML.clayer.yml
+      type:  Image processing
+    - layer: ML/cil_layer/cil_layer.clayer.yml
+      type:  Common Inference library
 
   output:
     type:
