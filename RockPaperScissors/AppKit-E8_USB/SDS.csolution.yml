@@ -27,7 +27,7 @@ solution:
       variables:
         - Board-Layer: $SolutionDir()$/Board/AppKit-E8_M55_HP/Board_HP-U85.clayer.yml
         - SDSIO-Layer: $SolutionDir()$/sdsio/usb/sdsio_usb.clayer.yml
-        - AI-Layer: $SolutionDir()$/ai_layer/ai_layer.clayer.yml
+        - AI-Layer: $SolutionDir()$/algorithm/ML/ai_layer/ai_layer.clayer.yml
       target-set:
         - set: J-Link
           debugger:
@@ -62,7 +62,7 @@ solution:
       variables:
         - Board-Layer: $SolutionDir()$/Board/Corstone-320/Board-U85.clayer.yml
         - SDSIO-Layer: $SolutionDir()$/sdsio/fvp/sdsio_fvp.clayer.yml
-        - AI-Layer: $SolutionDir()$/ai_layer/ai_layer.clayer.yml
+        - AI-Layer: $SolutionDir()$/algorithm/ML/ai_layer/ai_layer.clayer.yml
       target-set:
         - set:
           images:

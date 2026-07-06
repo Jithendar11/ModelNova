@@ -28,7 +28,7 @@
 
 // Output Data block size, in bytes
 #ifndef ALGO_DATA_OUT_BLOCK_SIZE
-#define ALGO_DATA_OUT_BLOCK_SIZE        (4U * sizeof(float))
+#define ALGO_DATA_OUT_BLOCK_SIZE        (50U)
 #endif
 
 #endif

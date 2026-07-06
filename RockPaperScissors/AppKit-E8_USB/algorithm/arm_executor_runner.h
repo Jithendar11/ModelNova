@@ -12,19 +12,22 @@
 #include <vector>
 #include <utility>
 
+#include "cil.h"
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/executor/program.h>
+#include "model_config.h"
 
 /* ============================================================================
  * Constants
  * ============================================================================
  */
 
-#define IMAGE_HEIGHT                 224
-#define IMAGE_WIDTH                  224
-#define IMAGE_CHANNELS               3
+#define IMAGE_HEIGHT                 MODEL_INPUT_HEIGHT
+#define IMAGE_WIDTH                  MODEL_INPUT_WIDTH
+#define IMAGE_CHANNELS               MODEL_INPUT_CHANNELS
 #define MAX_LABEL_NAME_LENGTH        100
 #define OUTPUT_STRING_SIZE           100
+#define MAX_DETECTIONS               10
 
 /* ============================================================================
  * Classification Result
@@ -32,13 +35,24 @@
  */
 
 /**
+ * \brief Detection result from one inference run.
+ *        Populated by print_outputs(). Copy into out_buf in ExecuteAlgorithm().
+ */
+typedef struct {
+    char  label_name[MAX_LABEL_NAME_LENGTH];    /**< Null-terminated predicted class name */
+    uint16_t detection_count;                        /**< Number of valid detections stored in the detections array */
+    detection_t detections[MAX_DETECTIONS];     /**< For object detection: array of detected boxes */
+} detection_result_t;
+
+/**
  * \brief Classification result from one inference run.
  *        Populated by print_outputs(). Copy into out_buf in ExecuteAlgorithm().
  */
 typedef struct {
     char  label_name[MAX_LABEL_NAME_LENGTH]; /**< Null-terminated predicted class name */
-    float confidence;                        /**< Confidence score */
-} runner_output_label_t;
+    uint16_t class_id;                       /**< Predicted class index */
+    float confidence;                        /**< Confidence score of the predicted class */
+} classification_result_t;
 
 /* ============================================================================
  * Forward Declaration of RunnerContext
@@ -95,10 +109,12 @@ bool run_inference(RunnerContext &ctx);
  *
  * \param[in]     ctx      RunnerContext after a successful run_inference().
  * \param[in]     img_buf  RGB888 frame buffer to draw the label onto.
+ * \param[in]     img_width  Frame width in pixels.
+ * \param[in]     img_height Frame height in pixels
  * \param[out]    out_buf  Caller buffer to receive runner_output_label_t result.
  * \param[in]     out_num  Byte size of out_buf.
  */
-void postprocess(RunnerContext &ctx, uint8_t *img_buf,
+void postprocess(RunnerContext &ctx, uint8_t *img_buf, uint32_t img_width, uint32_t img_height,
                  uint8_t *out_buf, uint32_t out_num);
 
 #endif /* ARM_EXECUTOR_RUNNER_H */

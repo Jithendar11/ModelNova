@@ -108,7 +108,6 @@ layer:
         - file: ext_init.c
         - file: profiler.c
         - file: profiler.h
-        - file: cxx_stubs.cpp
 
     - group: Ethos Interface
       files:

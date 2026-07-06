@@ -47,11 +47,6 @@ extern vStreamDriver_t          Driver_vStreamVideoOut;
 /* Camera frame buffer (RAW8 or RGB565) */
 static uint8_t CAM_Frame[CAMERA_FRAME_SIZE] CAMERA_FRAME_BUF_ATTRIBUTE;
 
-/* RGB image buffer (RGB888) */
-static uint8_t RGB_Image[RGB_IMAGE_SIZE] RGB_IMAGE_BUF_ATTRIBUTE;
-
-static void convert_frame_to_rgb(uint8_t *inFrame);
-
 /* Algorithm thread ID */
 osThreadId_t tid_algo = NULL;
 
@@ -191,9 +186,6 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
   SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_CONVERT_IMAGE);
 #endif
 
-  /* Convert input frame and place it into RGB_Image buffer */
-  convert_frame_to_rgb(inFrame);
-
 #ifdef USE_SEGGER_SYSVIEW
   SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CONVERT_IMAGE);
 #endif
@@ -224,122 +216,6 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
 #endif
 
   return ALGO_DATA_IN_BLOCK_SIZE;
-}
-
-/*
-  Converts camera frame and copies it to RGB image buffer.
-
-  Camera frame may be square or non-square and must be in RAW8 or RGB565 format.
-  RGB image buffer is always square and is in RGB888 format.
-
-  The function handles the following cases:
-    - If the camera frame is square and matches the RGB image size:
-      - crop and debayer the RAW8 camera frame
-      - convert RGB565 camera frame to RGB888
-      - copy RGB888 camera frame to RGB image buffer.
-    - If the camera frame is square and larger than the RGB image size:
-      - crop and debayer the RAW8 camera frame
-      - resize RGB565 camera frame to fit into RGB image buffer.
-      - resize RGB888 camera frame to fit into RGB image buffer.
-    - If the camera frame is not square:
-      - crop and debayer the RAW8 camera frame
-      - crop RGB565 camera frame to fit into RGB image buffer.
-      - crop RGB888 camera frame to fit into RGB image buffer.
-*/
-static void convert_frame_to_rgb(uint8_t *inFrame) {
-    #if (CAMERA_FRAME_WIDTH == CAMERA_FRAME_HEIGHT)
-      /* Camera frame is square */
-      #if (CAMERA_FRAME_WIDTH == RGB_IMAGE_WIDTH) && (CAMERA_FRAME_HEIGHT == RGB_IMAGE_HEIGHT)
-        /* Camera frame size matches RGB image size */
-        #if (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RAW8)
-            /* For RAW8, crop and debayer into RGB image buffer (RGB888) */
-            crop_and_debayer(inFrame,
-                            CAMERA_FRAME_WIDTH,
-                            CAMERA_FRAME_HEIGHT,
-                            0, 0, /* Crop from top-left corner */
-                            RGB_Image,
-                            RGB_IMAGE_WIDTH,
-                            RGB_IMAGE_HEIGHT,
-                            CAMERA_FRAME_BAYER);
-        #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB565)
-            /* For RGB565, convert frame to fit into RGB image buffer (RGB888) */
-            convert_rgb565_to_rgb888(inFrame, RGB_Image, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT);
-        #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB888)
-            /* For RGB888, just copy the frame */
-            memcpy(RGB_Image, inFrame, CAMERA_FRAME_WIDTH * CAMERA_FRAME_HEIGHT * 3);
-        #endif
-      #else
-        /* Camera frame size is larger than RGB image size */
-        #if (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RAW8)
-            /* For RAW8, crop and debayer into RGB image buffer (RGB888) */
-            crop_and_debayer(inFrame,
-                            CAMERA_FRAME_WIDTH,
-                            CAMERA_FRAME_HEIGHT,
-                            (CAMERA_FRAME_WIDTH - RGB_IMAGE_WIDTH) / 2, /* Center crop */
-                            (CAMERA_FRAME_HEIGHT - RGB_IMAGE_HEIGHT) / 2,
-                            RGB_Image,
-                            RGB_IMAGE_WIDTH,
-                            RGB_IMAGE_HEIGHT,
-                            CAMERA_FRAME_BAYER);
-        #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB565)
-            /* For RGB565, resize frame to fit into RGB image buffer (RGB888) */
-            image_resize(inFrame,
-                        CAMERA_FRAME_WIDTH,
-                        CAMERA_FRAME_HEIGHT,
-                        RGB_Image,
-                        RGB_IMAGE_WIDTH,
-                        RGB_IMAGE_HEIGHT,
-                        IMAGE_FORMAT_RGB565,
-                        IMAGE_FORMAT_RGB888);
-        #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB888)
-            /* For RGB888, resize frame to fit into RGB image buffer (RGB888) */
-            image_resize(inFrame,
-                        CAMERA_FRAME_WIDTH,
-                        CAMERA_FRAME_HEIGHT,
-                        RGB_Image,
-                        RGB_IMAGE_WIDTH,
-                        RGB_IMAGE_HEIGHT,
-                        IMAGE_FORMAT_RGB888,
-                        IMAGE_FORMAT_RGB888);
-        #endif
-      #endif
-    #endif
-
-    #if (CAMERA_FRAME_WIDTH != CAMERA_FRAME_HEIGHT)
-      /* Camera frame is not square, crop it to fit RGB buffer */
-      #if (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RAW8)
-        /* For RAW8, crop and debayer to RGB888 */
-        crop_and_debayer(inFrame,
-                        CAMERA_FRAME_WIDTH,
-                        CAMERA_FRAME_HEIGHT,
-                        (CAMERA_FRAME_WIDTH - RGB_IMAGE_WIDTH) / 2, /* Center crop */
-                        (CAMERA_FRAME_HEIGHT - RGB_IMAGE_HEIGHT) / 2,
-                        RGB_Image,
-                        RGB_IMAGE_WIDTH,
-                        RGB_IMAGE_HEIGHT,
-                        CAMERA_FRAME_BAYER);
-      #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB565)
-        /* For RGB565, crop and convert to RGB888 */
-        crop_rgb565_to_rgb888(inFrame,
-                            CAMERA_FRAME_WIDTH,
-                            CAMERA_FRAME_HEIGHT,
-                            RGB_Image,
-                            (CAMERA_FRAME_WIDTH - RGB_IMAGE_WIDTH) / 2, /* Center crop */
-                            (CAMERA_FRAME_HEIGHT - RGB_IMAGE_HEIGHT) / 2,
-                            RGB_IMAGE_WIDTH,
-                            RGB_IMAGE_HEIGHT);
-      #elif (CAMERA_FRAME_TYPE == CAMERA_FRAME_TYPE_RGB888)
-        /* For RGB888, just crop */
-        crop_rgb888_to_rgb888(inFrame,
-                            CAMERA_FRAME_WIDTH,
-                            CAMERA_FRAME_HEIGHT,
-                            RGB_Image,
-                            (CAMERA_FRAME_WIDTH - RGB_IMAGE_WIDTH) / 2, /* Center crop */
-                            (CAMERA_FRAME_HEIGHT - RGB_IMAGE_HEIGHT) / 2,
-                            RGB_IMAGE_WIDTH,
-                            RGB_IMAGE_HEIGHT);
-      #endif
-    #endif
 }
 
 #else                                   // If simulator target is selected

@@ -1,0 +1,12 @@
+layer:
+  type: ML
+  description: >
+    ML layer utilities. Contains shared ML-related helper functions
+    used by AI / Executorch layers such as image preprocessing.
+
+  groups:
+    - group: ML Utilities
+      files:
+        - file: image_processing_func.c
+        - file: image_processing_func.h
+        - file: model_config.h

@@ -21,8 +21,9 @@
 #include "image_processing_func.h"
 #include CMSIS_device_header
 #include "arm_memory_allocator.h"
-#include "arm_perf_monitor.h"
-#include "arm_executor_runner.h"  /* runner_output_label_t, RunnerContext (shared with sds_algorithm_user.cpp) */
+#include "arm_executor_runner.h"  /* detection_result_t, RunnerContext (shared with sds_algorithm_user.cpp) */
+#include "cil.h"
+#include "model_config.h"
 
 #ifndef  SIMULATOR
 #include "cmsis_vstream.h"
@@ -58,29 +59,26 @@ using executorch::runtime::TensorInfo;
  * Macros and Definitions
  * ============================================================================
  */
-
-#define VEHICLE_MODEL            0
-#define BANANA_RIPENESS_MODEL    1
-#define TOOL_MODEL               2
-#define RPS_MODEL                3
-#define NUM_CLASSES              4
 #define FONT_WIDTH               8
 #define FONT_HEIGHT              8
 #define FONT_SCALE               2
-#define TEXT_BOTTOM_MARGIN       8
+#define DETECTION_LABEL_SCALE    1
+#define TEXT_TOP_MARGIN          8
 #define OUTPUT_STRING_SIZE       100
-#define MAX_LABEL_NAME_LENGTH    100
 #define ASCII_CHAR_COUNT         128
 #define BYTES_PER_PIXEL_RGB888   3
 #define FONT_MSB_MASK            0x80
 #define PERCENT_SCALE            100.0f
 
-#define COLOR_RESET              "\033[0m"
-#define COLOR_RED                "\033[31m"
-#define COLOR_GREEN              "\033[32m"
-#define COLOR_YELLOW             "\033[33m"
-#define COLOR_BLUE               "\033[34m"
+#define SHORT_LABEL_MAX_BYTES    8
+#define SHORT_LABEL_PREFIX_BYTES 5
+#define SHORT_LABEL_DOT_BYTES    2
+#define UNKNOWN_LABEL            "UNKNOWN"
+#define LOW_CONFIDENCE_THRESHOLD 0.15f
 
+#if defined(MODEL_INPUT_IS_INT8) && MODEL_INPUT_IS_INT8
+#define ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE_INT8 0x2E6667
+#endif
 
 #define vStream_VideoOut         (&Driver_vStreamVideoOut)
 
@@ -152,9 +150,7 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
  * Type Definitions
  * ============================================================================
  */
-
-/* output_label_t is defined as runner_output_label_t in arm_executor_runner.h */
-typedef runner_output_label_t output_label_t;
+typedef classification_result_t output_label_t;
 
 /* ============================================================================
  * External Variables
@@ -172,8 +168,6 @@ extern vStreamDriver_t Driver_vStreamVideoOut;
  */
 char output_string[OUTPUT_STRING_SIZE];
 
-int model_config = RPS_MODEL;
-
 float conf_score = 0.0f;
 
 int conf_int;
@@ -184,19 +178,21 @@ bool classify_object = false;
 
 output_label_t output_label;
 
-float class_probs[NUM_CLASSES] = {0.0};
-
 constexpr int H = IMAGE_HEIGHT;
 
 constexpr int W = IMAGE_WIDTH;
 
 constexpr int C = IMAGE_CHANNELS;
 
+#if defined(MODEL_INPUT_IS_INT8) && MODEL_INPUT_IS_INT8
+static int8_t input_tensor_data[1 * C * H * W];
+#else
 static float input_tensor_data[1 * C * H * W];
+#endif
 
-constexpr float mean[3] = {0.485f, 0.456f, 0.406f};
-
-constexpr float stdv[3] = {0.229f, 0.224f, 0.225f};
+uint8_t __attribute__((
+    section(".bss.pp_buf"),
+    aligned(16))) preprocess_arena_space_array[H * W * C];
 
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;
@@ -207,8 +203,13 @@ unsigned char __attribute__((
 
 const int num_inferences = 1;
 
+#if defined(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE_INT8)
+const size_t temp_allocation_pool_size =
+    ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE_INT8;
+#else
 const size_t temp_allocation_pool_size =
     ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
+#endif
 unsigned char __attribute__((
     section(".bss.activation_buf_sram"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
@@ -240,11 +241,6 @@ uint32_t display_time = 0;
  * Static Constants
  * ============================================================================
  */
-static const char* VEHICLE_CLASS_NAMES[] = {"UNKNOWN", "BUS", "CAR", "TRUCK"};
-static const char* BANANA_CLASS_NAMES[] = {"Overripe", "Ripe", "Rotten",
-                                           "Unripe"};
-static const char* TOOL_CLASS_NAMES[] = {"Bolt", "Hammer", "Nail", "Nut"};
-static const char* RPS_CLASS_NAMES[] = {"PAPER", "ROCK", "SCISSORS", "UNKNOWN"};
 
 /* Traditional array initialization (no designated initializers) */
 static const uint8_t font_8x8[ASCII_CHAR_COUNT][8] = {
@@ -347,26 +343,6 @@ static const uint8_t font_8x8[ASCII_CHAR_COUNT][8] = {
  */
 
 /**
- * \brief Get ANSI color code for class index
- * \param[in] idx Class index
- * \return Pointer to color code string
- */
-const char* get_log_color(int idx) {
-    switch (idx) {
-        case 0: /* class 1 */
-            return COLOR_YELLOW;
-        case 1: /* class 2 */
-            return COLOR_GREEN;
-        case 2: /* class 3 */
-            return COLOR_RED;
-        case 3: /* class 4 */
-            return COLOR_BLUE;
-        default:
-            return COLOR_RESET;
-    }
-}
-
-/**
  * \brief Draw a single character on an RGB image
  * \param[in,out] image      Pointer to image buffer (RGB888 format)
  * \param[in]     img_width  Image width in pixels
@@ -401,7 +377,6 @@ static void DrawChar(uint8_t* image, uint32_t img_width, uint32_t img_height,
                         if (py >= img_height || px_x >= img_width) {
                             continue;
                         }
-
                         uint8_t* px = image + (py * stride) + (px_x * 3);
                         px[0] = 0;   /* Red */
                         px[1] = 0;   /* Green */
@@ -443,67 +418,76 @@ static void DrawTextOnImage(uint8_t* imageBuffer, uint32_t img_width,
  */
 void DrawClassLabelOnImage(uint8_t* imageBuffer, uint32_t img_width,
                                   uint32_t img_height, const char* text) {
-    const uint32_t scale = FONT_SCALE;          /* 2x scaling */
-    const uint32_t char_w = FONT_WIDTH * scale; /* 16 pixels wide per char */
-    const uint32_t char_height = FONT_HEIGHT * scale; /* 16 pixels tall */
-
-    uint32_t len = strlen(text);
-    uint32_t text_width = len * char_w;
-
-    /* Center horizontally in image */
-    uint32_t x_start = (img_width - text_width) / 2;
-
-    /* Position from bottom with safe margin */
-    /* 224 - 16 - 8 = 200 */
-    uint32_t y_start = img_height - char_height - TEXT_BOTTOM_MARGIN;
-
-    DrawTextOnImage(imageBuffer, img_width, img_height, text, x_start, y_start,
-                    scale);
+    const uint32_t scale = FONT_SCALE;
+    const uint32_t square_dim = (img_width < img_height) ? img_width : img_height;
+    const uint32_t square_x = (img_width - square_dim) / 2U;
+    const uint32_t square_y = (img_height - square_dim) / 2U;
+    const uint32_t char_w = FONT_WIDTH * scale;
+    const uint32_t char_h = FONT_HEIGHT * scale;
+    const uint32_t text_band_h = char_h + (2U * TEXT_TOP_MARGIN);
+    const uint32_t len = (uint32_t)strlen(text);
+    const uint32_t text_w = len * char_w;
+    const uint32_t x_start = square_x + ((square_dim - text_w) / 2U);
+    const uint32_t y_bottom = square_y + square_dim - text_band_h;
+    /* Draw normal text here; 180-degree display flip makes it top + reversed on LCD. */
+    DrawTextOnImage(imageBuffer, img_width, img_height, text, x_start,
+                    y_bottom + TEXT_TOP_MARGIN, scale);
 }
 
 /**
- * \brief Find index of maximum value in probability array
- * \param[in]  probs      Pointer to probability array
- * \param[in]  n          Number of elements in array
- * \param[out] confidence Pointer to store maximum probability value
- * \return Index of maximum probability
+ * \brief Shorten long labels for display output.
+ *        Labels longer than 8 bytes are shown as first 5 bytes plus "..".
+ * \param[in]  label       Full null-terminated class label
+ * \param[out] short_label Buffer receiving shortened label text
+ * \param[in]  short_label_size Size of short_label in bytes
  */
-static int argmax(const float* probs, int n, float* confidence) {
-    int idx = 0;
-    *confidence = probs[0];
+static void FormatShortLabel(const char* label, char* short_label,
+                             size_t short_label_size) {
+    if (short_label == nullptr || short_label_size == 0U) {
+        return;
+    }
 
-    for (int i = 1; i < n; i++) {
-        if (probs[i] > *confidence) {
-            *confidence = probs[i];
-            idx = i;
+    if (label == nullptr) {
+        label = UNKNOWN_LABEL;
+    }
+
+    short_label[0] = '\0';
+
+    size_t label_len = strlen(label);
+    size_t payload_size = short_label_size - 1U;
+
+    if (label_len > SHORT_LABEL_MAX_BYTES) {
+        if (payload_size <= SHORT_LABEL_DOT_BYTES) {
+            for (size_t i = 0U; i < payload_size; ++i) {
+                short_label[i] = '.';
+            }
+            short_label[payload_size] = '\0';
+            return;
         }
-    }
-    return idx;
-}
 
-/**
- * \brief Apply softmax function to convert logits to probabilities
- * \param[in]  logits Pointer to logit values array
- * \param[out] probs  Pointer to output probability array
- * \param[in]  n      Number of elements
- */
-void softmax(const float* logits, float* probs, int n) {
-    float max_val = logits[0];
-    for (int i = 1; i < n; i++) {
-        if (logits[i] > max_val) {
-            max_val = logits[i];
+        size_t copy_len = SHORT_LABEL_PREFIX_BYTES;
+        size_t max_copy_len = payload_size - SHORT_LABEL_DOT_BYTES;
+        if (copy_len > max_copy_len) {
+            copy_len = max_copy_len;
         }
+        if (copy_len > label_len) {
+            copy_len = label_len;
+        }
+
+        memcpy(short_label, label, copy_len);
+        short_label[copy_len] = '.';
+        short_label[copy_len + 1U] = '.';
+        short_label[copy_len + SHORT_LABEL_DOT_BYTES] = '\0';
+        return;
     }
 
-    float sum = 0.0f;
-    for (int i = 0; i < n; i++) {
-        probs[i] = expf(logits[i] - max_val);
-        sum += probs[i];
+    size_t copy_len = label_len;
+    if (copy_len > payload_size) {
+        copy_len = payload_size;
     }
 
-    for (int i = 0; i < n; i++) {
-        probs[i] /= sum;
-    }
+    memcpy(short_label, label, copy_len);
+    short_label[copy_len] = '\0';
 }
 
 /**
@@ -511,22 +495,13 @@ void softmax(const float* logits, float* probs, int n) {
  * \param[in] image Pointer to input image data (HWC RGB format)
  */
 void preprocess(const uint8_t* image) {
-    /* image layout: HWC, RGBRGB... */
-    for (int c = 0; c < C; ++c) {
-        for (int h = 0; h < H; ++h) {
-            for (int w = 0; w < W; ++w) {
-                int hwc_index = (h * W + w) * C + c;
-                int nchw_index = c * H * W + h * W + w;
-
-                /* uint8 → float [0,1] */
-                float x = image[hwc_index] / 255.0f;
-
-                /* Normalize (ImageNet) */
-                x = (x - mean[c]) / stdv[c];
-
-                input_tensor_data[nchw_index] = x;
-            }
-        }
+    status_t preprocess_result = preprocess(image, W, H,
+                                            input_tensor_data,
+                                            preprocess_arena_space_array,
+                                            IMAGE_COLOR_RGB,
+                                            NCHW);
+    if(preprocess_result != STATUS_OK){
+        printf("Preprocess failed");
     }
 }
 
@@ -840,114 +815,91 @@ void log_mem_status(RunnerContext& ctx) {
  * \brief Print and process model output tensors
  * \param[in] ctx Runner context
  */
-void print_outputs(RunnerContext& ctx) {
+void print_outputs(RunnerContext& ctx)
+{
     std::vector<EValue> outputs(ctx.method.value()->outputs_size());
 
     Error status =
         ctx.method.value()->get_outputs(outputs.data(), outputs.size());
     ET_CHECK(status == Error::Ok);
 
-    for (int i = 0; i < outputs.size(); ++i) {
-        if (outputs[i].isTensor()) {
-            Tensor tensor = outputs[i].toTensor();
-            if (tensor.scalar_type() != ScalarType::Float) {
-                continue;
-            }
-
-            const float* logits = tensor.const_data_ptr<float>();
-            int numel = tensor.numel();
-
-            float probs[NUM_CLASSES];
-            float confidence;
-            int predicted_idx;
-
-            softmax(logits, probs, numel);
-            memcpy(class_probs, probs, sizeof(class_probs));
-            predicted_idx = argmax(probs, numel, &confidence);
-
-            if (model_config == VEHICLE_MODEL) {
-                const char* color = get_log_color(predicted_idx);
-                printf("\nPost-processed output:\n");
-                printf("Predicted class : %s%s%s\n", color,
-                       VEHICLE_CLASS_NAMES[predicted_idx], COLOR_RESET);
-                printf("Confidence      : %.2f %%\n", confidence * PERCENT_SCALE);
-                conf_int = (int)(confidence * PERCENT_SCALE);
-                conf_score = confidence * PERCENT_SCALE;
-                strncpy(label_name, VEHICLE_CLASS_NAMES[predicted_idx],
-                        sizeof(label_name) - 1);
-                label_name[sizeof(label_name) - 1] = '\0';
-                strncpy(output_label.label_name,
-                        VEHICLE_CLASS_NAMES[predicted_idx],
-                        sizeof(output_label.label_name) - 1);
-                output_label.label_name[sizeof(output_label.label_name) - 1] =
-                    '\0';
-                output_label.confidence = conf_score;
-
-                if (strcmp(label_name, "UNKNOWN") == 0) {
-                    classify_object = false;
-                } else {
-                    classify_object = true;
-                }
-
-            } else if (model_config == BANANA_RIPENESS_MODEL) {
-                const char* color = get_log_color(predicted_idx);
-                printf("\nPost-processed output:\n");
-                printf("Predicted class : %s%s%s\n", color,
-                       BANANA_CLASS_NAMES[predicted_idx], COLOR_RESET);
-                printf("Confidence      : %.2f %%\n", confidence * PERCENT_SCALE);
-                conf_score = confidence * PERCENT_SCALE;
-                strncpy(label_name, BANANA_CLASS_NAMES[predicted_idx],
-                        sizeof(label_name) - 1);
-                label_name[sizeof(label_name) - 1] = '\0';
-                strncpy(output_label.label_name,
-                        VEHICLE_CLASS_NAMES[predicted_idx],
-                        sizeof(output_label.label_name) - 1);
-                output_label.label_name[sizeof(output_label.label_name) - 1] =
-                    '\0';
-                output_label.confidence = conf_score;
-            } else if (model_config == TOOL_MODEL) {
-                const char* color = get_log_color(predicted_idx);
-                printf("\nPost-processed output:\n");
-                printf("Predicted class : %s%s%s\n", color,
-                       TOOL_CLASS_NAMES[predicted_idx], COLOR_RESET);
-                printf("Confidence      : %.2f %%\n", confidence * PERCENT_SCALE);
-                conf_score = confidence * PERCENT_SCALE;
-                strncpy(label_name, TOOL_CLASS_NAMES[predicted_idx],
-                        sizeof(label_name) - 1);
-                label_name[sizeof(label_name) - 1] = '\0';
-                strncpy(output_label.label_name,
-                        VEHICLE_CLASS_NAMES[predicted_idx],
-                        sizeof(output_label.label_name) - 1);
-                output_label.label_name[sizeof(output_label.label_name) - 1] =
-                    '\0';
-                output_label.confidence = conf_score;
-            } else if (model_config == RPS_MODEL) {
-                const char* color = get_log_color(predicted_idx);
-                if (predicted_idx < (NUM_CLASSES - 1)) {
-                    // To reduce clutter, print predicted class and confidence only if predicted class is different then UNKNOWN
-                    printf("\nPost-processed output:\n");
-                    printf("Predicted class : %s%s%s\n", color,
-                           RPS_CLASS_NAMES[predicted_idx], COLOR_RESET);
-                    printf("Confidence      : %.2f %%\n", confidence * PERCENT_SCALE);
-                }
-                conf_score = confidence * PERCENT_SCALE;
-                conf_int = (int)(confidence * PERCENT_SCALE);
-                strncpy(label_name, RPS_CLASS_NAMES[predicted_idx],
-                        sizeof(label_name) - 1);
-                label_name[sizeof(label_name) - 1] = '\0';
-                strncpy(output_label.label_name,
-                        RPS_CLASS_NAMES[predicted_idx],
-                        sizeof(output_label.label_name) - 1);
-                output_label.label_name[sizeof(output_label.label_name) - 1] =
-                    '\0';
-                output_label.confidence = conf_score;
-            } else {
-                printf("\nPost-processed output:\n");
-                printf("Invalid classes\n");
-            }
-        } else {
+    for (int i = 0; i < outputs.size(); ++i)
+    {
+        if (!outputs[i].isTensor()) {
             printf("Output[%d]: Not Tensor\n", i);
+            continue;
         }
+
+        Tensor tensor = outputs[i].toTensor();
+
+        if (tensor.scalar_type() != ScalarType::Float && tensor.scalar_type() != ScalarType::Char) {
+            continue;
+        }
+
+        postprocess_data_t result = {0};
+        const float* logits = tensor.const_data_ptr<float>();
+        int numel = tensor.numel();
+
+        // Safety check
+        if (numel != MODEL_NUM_CLASSES) {
+            printf("Error: Output class count mismatch!\n");
+            printf("Number of classes: %d, expected: %d\n", numel, MODEL_NUM_CLASSES);
+        }
+
+        static float probs[MODEL_NUM_CLASSES];
+        float confidence = 0.0f;
+        uint16_t predicted_idx = -1;
+        status_t postprocess_result = postprocess((float*)logits, &result);
+
+        if(postprocess_result != STATUS_OK){
+            printf("Post-Process failed");
+            break;
+        }
+
+        predicted_idx = result.detected_class_index;
+        confidence = result.max_confidence;
+        const char* predicted_label = UNKNOWN_LABEL;
+        if (predicted_idx >= 0 && predicted_idx < MODEL_NUM_CLASSES &&
+            MODEL_LABELS[predicted_idx] != nullptr) {
+            predicted_label = MODEL_LABELS[predicted_idx];
+        }
+        else {
+            printf("Invalid predicted class index: %d\n", predicted_idx);
+        }
+
+        float confidence_percent = confidence * 100.0f;
+
+        /* Store results */
+        conf_score = confidence_percent;
+        conf_int   = (int)confidence_percent;
+
+        strncpy(label_name,
+                predicted_label,
+                sizeof(label_name) - 1);
+        label_name[sizeof(label_name) - 1] = '\0';
+
+        output_label.confidence = conf_score;
+        output_label.class_id   = predicted_idx; 
+
+        if (confidence < LOW_CONFIDENCE_THRESHOLD ||
+            strcmp(predicted_label, UNKNOWN_LABEL) == 0) {
+            classify_object = false;
+            strncpy(output_label.label_name, UNKNOWN_LABEL,
+                    sizeof(output_label.label_name) - 1);
+            output_label.label_name[sizeof(output_label.label_name) - 1] = '\0';
+        }
+        else {
+            classify_object = true;
+            FormatShortLabel(predicted_label,
+                             output_label.label_name,
+                             sizeof(output_label.label_name));
+        }
+
+        printf("\nPost-processed output:\n");
+        printf("Predicted class : %s\n",
+               classify_object ? predicted_label : UNKNOWN_LABEL);
+        printf("Confidence      : %.2f %%\n",
+               confidence_percent);
     }
 }
 
@@ -959,25 +911,35 @@ void print_outputs(RunnerContext& ctx) {
  *
  * \param[in]     ctx      RunnerContext after a successful run_inference().
  * \param[in]     img_buf  RGB888 frame buffer to draw the label onto.
- * \param[out]    out_buf  Caller buffer to receive runner_output_label_t result.
+ * \param[in]     img_width  Frame width in pixels.
+ * \param[in]     img_height Frame height in pixels
+ * \param[out]    out_buf  Caller buffer to receive detection_result_t result.
  * \param[in]     out_num  Byte size of out_buf.
  */
 void postprocess(RunnerContext& ctx, uint8_t* img_buf,
+                 uint32_t img_width, uint32_t img_height,
                  uint8_t* out_buf, uint32_t out_num) {
+
+    memset(&output_label, 0, sizeof(output_label));
+
     /* Decode output tensor → output_label, conf_int, classify_object */
     print_outputs(ctx);
 
-    /* Copy classification result into caller's output buffer */
-    if (out_num >= sizeof(class_probs)) {
-        memcpy(out_buf, class_probs, sizeof(class_probs));
+    /* Copy shortened label plus confidence into caller's output buffer */
+    if (out_num >= sizeof(output_label_t)) {
+        memcpy(out_buf, &output_label, sizeof(output_label_t));
     }
 
-    /* Format label string and draw onto frame */
-    snprintf(output_string, OUTPUT_STRING_SIZE, "%s-%d",
-             output_label.label_name, conf_int);
-    output_string[OUTPUT_STRING_SIZE - 1] = '\0';
+    /* Only draw if label is valid */
+    if (output_label.label_name[0] != '\0')
+    {
+        /* Format label string and draw onto frame */
+        snprintf(output_string, OUTPUT_STRING_SIZE, "%s - %d",
+                 output_label.label_name, conf_int);
+        output_string[OUTPUT_STRING_SIZE - 1] = '\0';
 
-    DrawClassLabelOnImage(img_buf, IMAGE_WIDTH, IMAGE_HEIGHT, output_string);
+        DrawClassLabelOnImage(img_buf, img_width, img_height, output_string);
+    }
 }
 
 void write_etdump(RunnerContext& ctx) {}
@@ -1013,10 +975,6 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
 bool run_inference(RunnerContext& ctx) {
     Error status = Error::Ok;
     int n = 0;
-
-#ifdef USE_PERFORMANCE_MONITOR
-    StartMeasurements();
-#endif
     for (n = 0; n < num_inferences; n++) {
 
         std::vector<std::pair<char*, size_t>> input_buffers;
@@ -1049,9 +1007,6 @@ bool run_inference(RunnerContext& ctx) {
                profiler_cycles_to_ms(inference_time, CPU_FREQ_HZ));
 #endif
     }
-#ifdef USE_PERFORMANCE_MONITOR
-    StopMeasurements(num_inferences);
-#endif
 
     ET_CHECK_MSG(status == Error::Ok,
                  "Execution of method %s failed with status 0x%" PRIx32,

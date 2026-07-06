@@ -81,7 +81,7 @@ LR_RAM0 __RAM0_BASE {
 
     ; NN Activation Tensor (activation buffer / tensor arena)
     *.o (*activation_buf)
-
+    *.o (*bss.pp_buf)
    .ANY (+RW +ZI)
   }
 #endif
@@ -103,7 +103,7 @@ LR_RAM0 __RAM0_BASE {
 LR_ROM2 __ROM2_BASE __ROM2_SIZE  {
   ER_ROM2 +0 __ROM2_SIZE {
     ; NN Model Binary Representation
-    *.o (nn_model)
+    *.o (network_model_sec)
 
    .ANY (+RO +XO)
   }

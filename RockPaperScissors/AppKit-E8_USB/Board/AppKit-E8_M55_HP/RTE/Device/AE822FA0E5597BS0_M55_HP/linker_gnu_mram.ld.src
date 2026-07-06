@@ -172,6 +172,7 @@ SECTIONS
     *(.bss.lcd_frame_buf)                 /* LCD frame Buffer. */
     *(.bss.camera_frame_buf)              /* Camer Frame Buffer */
     *(.bss.camera_frame_bayer_to_rgb_buf) /* (Optional) Camera Frame Buffer for Bayer to RGB Conversion. */
+    *(.bss.pp_buf)
   } > SRAM0
 #endif
 

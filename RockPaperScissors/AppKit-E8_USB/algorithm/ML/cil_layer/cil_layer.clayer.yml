@@ -1,0 +1,10 @@
+
+layer:
+  type: CIL
+  description: Common Inference library
+  add-path:
+    - ./include
+  groups:
+    - group: CIL Libraries
+      files:
+        - file: ./src/cil.a

@@ -106,7 +106,7 @@ LR_ROM __ROM_BASE NOCOMPRESS __ROM_SIZE  {    ; load region size_region
     /* ExecuTorch large buffers */
     * (.bss.input_data_sec)
     * (.bss.activation_buf_sram)
-
+    * (.bss.pp_buf)                        ; Used for pre and post processing
     /* Everything else */
     .ANY (+RW +ZI)
   }

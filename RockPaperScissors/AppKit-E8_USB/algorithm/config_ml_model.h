@@ -19,17 +19,19 @@
 #ifndef CONFIG_ML_MODEL_H__
 #define CONFIG_ML_MODEL_H__
 
+#include "model_config.h"
+
 // ML Image Width
 // Define the width of the image to be used for ML inference.
 // Default: 224
 #ifndef ML_IMAGE_WIDTH
-#define ML_IMAGE_WIDTH              224
+#define ML_IMAGE_WIDTH              MODEL_INPUT_WIDTH
 #endif
 // ML Image Height
 // Define the height of the image to be used for ML inference.
 // Default: 224
 #ifndef ML_IMAGE_HEIGHT
-#define ML_IMAGE_HEIGHT             224
+#define ML_IMAGE_HEIGHT             MODEL_INPUT_HEIGHT
 #endif
 // ML Image Buffer Section Name
 // Define the name of the section for the ML image buffer

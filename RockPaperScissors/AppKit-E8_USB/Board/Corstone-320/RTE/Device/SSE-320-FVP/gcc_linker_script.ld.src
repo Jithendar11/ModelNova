@@ -320,6 +320,7 @@ SECTIONS
     . = ALIGN(32);
     *(*ethos_cache_buf)  /* Ethos-U Cache Area */
     *(*activation_buf)   /* NN Activation Tensor (activation buffer / tensor arena) */
+    *(*bss.pp_buf)
   } > RAM1
 
   /* Initialized buffers in fast access RAM */
@@ -331,7 +332,7 @@ SECTIONS
 
   .rom2 :
   {
-    *(*nn_model)         /* NN Model Binary Representation */
+    *(network_model_sec)         /* NN Model Binary Representation */
   } > ROM2
 
   .rom3 :
