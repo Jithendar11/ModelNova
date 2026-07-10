@@ -178,6 +178,8 @@ bool classify_object = false;
 
 output_label_t output_label;
 
+float class_probs[MODEL_NUM_CLASSES] = {0.0};
+
 constexpr int H = IMAGE_HEIGHT;
 
 constexpr int W = IMAGE_WIDTH;
@@ -488,6 +490,31 @@ static void FormatShortLabel(const char* label, char* short_label,
 
     memcpy(short_label, label, copy_len);
     short_label[copy_len] = '\0';
+}
+
+/**
+ * \brief Apply softmax function to convert logits to probabilities
+ * \param[in]  logits Pointer to logit values array
+ * \param[out] probs  Pointer to output probability array
+ * \param[in]  n      Number of elements
+ */
+void softmax(const float* logits, float* probs, int n) {
+    float max_val = logits[0];
+    for (int i = 1; i < n; i++) {
+        if (logits[i] > max_val) {
+            max_val = logits[i];
+        }
+    }
+
+    float sum = 0.0f;
+    for (int i = 0; i < n; i++) {
+        probs[i] = expf(logits[i] - max_val);
+        sum += probs[i];
+    }
+
+    for (int i = 0; i < n; i++) {
+        probs[i] /= sum;
+    }
 }
 
 /**
@@ -846,9 +873,9 @@ void print_outputs(RunnerContext& ctx)
             printf("Number of classes: %d, expected: %d\n", numel, MODEL_NUM_CLASSES);
         }
 
-        static float probs[MODEL_NUM_CLASSES];
         float confidence = 0.0f;
         uint16_t predicted_idx = -1;
+        softmax(logits, class_probs, numel);
         status_t postprocess_result = postprocess((float*)logits, &result);
 
         if(postprocess_result != STATUS_OK){
@@ -926,8 +953,8 @@ void postprocess(RunnerContext& ctx, uint8_t* img_buf,
     print_outputs(ctx);
 
     /* Copy shortened label plus confidence into caller's output buffer */
-    if (out_num >= sizeof(output_label_t)) {
-        memcpy(out_buf, &output_label, sizeof(output_label_t));
+    if (out_num >= sizeof(class_probs)) {
+        memcpy(out_buf, class_probs, sizeof(class_probs));
     }
 
     /* Only draw if label is valid */
