@@ -20,6 +20,7 @@
 #define ALGORITHM_CONFIG_H_
 
 #include "config_ml_model.h"            // ML model configuration
+#include "model_config.h"
 
 // Input Data block size, in bytes
 #ifndef ALGO_DATA_IN_BLOCK_SIZE
@@ -28,7 +29,7 @@
 
 // Output Data block size, in bytes
 #ifndef ALGO_DATA_OUT_BLOCK_SIZE
-#define ALGO_DATA_OUT_BLOCK_SIZE        (50U)
+#define ALGO_DATA_OUT_BLOCK_SIZE        (MODEL_NUM_CLASSES * sizeof(float))
 #endif
 
 #endif
