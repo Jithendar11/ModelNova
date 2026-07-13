@@ -280,6 +280,8 @@ Closed:   ML_Out (.\ML_Out.1.sds).
 
 The ML model delivers four float values for each category `PAPER`, `ROCK`, `SCISSORS`, and `UNKNOWN`. The inference interval is about 8 Hz. This information is recorded in the `ML_Out.<n>.sds` files in binary format. The file `RockPaperScissors/SDS_Metadata/ML_Out.sds.yml` describes the content and using this file with SDS utilities allows you to view the content.
 
+A utility script to auto-generate this `ML_Out.sds.yml` from a `model_config.h` header is available [here](../RockPaperScissors/AppKit-E8_USB/scripts/README.md).
+
 **Example output:**
 
 ```txt

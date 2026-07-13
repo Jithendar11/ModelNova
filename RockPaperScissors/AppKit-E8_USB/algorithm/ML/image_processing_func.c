@@ -21,6 +21,11 @@
 #include "cmsis_compiler.h"
 #include "image_processing_func.h"
 
+#ifdef   USE_SEGGER_SYSVIEW
+#include "SEGGER_SYSVIEW.h"
+#include "sysview_markers.h"
+#endif
+
 /*
   Clamp a value to a specified range.
 
@@ -323,6 +328,9 @@ void crop_resize_rgb565_to_rgb888(
     int dst_width,
     int dst_height)
 {
+#ifdef USE_SEGGER_SYSVIEW
+    SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_RESIZE_IMAGE);
+#endif
     int crop_size = src_height;                 // 720 for 1280x720
     int crop_x = (src_width - crop_size) / 2;   // center horizontally
     int crop_y = 0;
@@ -339,6 +347,13 @@ void crop_resize_rgb565_to_rgb888(
             int sx = (src_x_fp >> FP_SHIFT) + crop_x;
 
             int idx = (sy * src_width + sx) * 2;
+#ifdef USE_SEGGER_SYSVIEW
+            SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_RESIZE_IMAGE);
+#endif
+
+#ifdef USE_SEGGER_SYSVIEW
+            SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_CONVERT_IMAGE);
+#endif
             uint16_t pixel = src[idx] | (src[idx + 1] << 8);
 
             uint8_t r5 = (pixel >> 11) & 0x1F;
@@ -350,6 +365,9 @@ void crop_resize_rgb565_to_rgb888(
             dst_pixel[0] = (r5 << 3) | (r5 >> 2);
             dst_pixel[1] = (g6 << 2) | (g6 >> 4);
             dst_pixel[2] = (b5 << 3) | (b5 >> 2);
+#ifdef USE_SEGGER_SYSVIEW
+            SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CONVERT_IMAGE);
+#endif
         }
     }
 }

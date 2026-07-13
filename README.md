@@ -74,6 +74,8 @@ The diagram below illustrates the RPS application architecture. During algorithm
 
     While Fusion Studio supports multiple workspace creation methods (Scratch, Starter Pack, AI Assist), the **ML workflow remains identical for all workspaces**.
 
+> The `RockPaperScissors` project also serves as a [template for creating new examples](./Documentation/README.md#creating-a-new-use-case-from-the-rps-template).
+
 ## Analyze Timing with SystemView
 
 [SEGGER SystemView](https://www.segger.com/products/development-tools/systemview/) can be used for timing analysis. The application includes annotations that let you measure the timing of different compute blocks, as shown below.

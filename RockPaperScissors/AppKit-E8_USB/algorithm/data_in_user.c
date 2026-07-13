@@ -182,18 +182,6 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
   SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CAPTURE_IMAGE);
 #endif
 
-#ifdef USE_SEGGER_SYSVIEW
-  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_CONVERT_IMAGE);
-#endif
-
-#ifdef USE_SEGGER_SYSVIEW
-  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_CONVERT_IMAGE);
-#endif
-
-#ifdef USE_SEGGER_SYSVIEW
-  SEGGER_SYSVIEW_MarkStart(SYSVIEW_MARKER_RESIZE_IMAGE);
-#endif
-
   /* Resize RGB image to fit ML model expected size */
   crop_resize_rgb565_to_rgb888(inFrame,
                                CAMERA_FRAME_WIDTH,
@@ -201,10 +189,6 @@ int32_t GetInputData (uint8_t *buf, uint32_t max_len) {
                                buf,
                                ML_IMAGE_WIDTH,
                                ML_IMAGE_HEIGHT);
-
-#ifdef USE_SEGGER_SYSVIEW
-  SEGGER_SYSVIEW_MarkStop(SYSVIEW_MARKER_RESIZE_IMAGE);
-#endif
 
   /* Release input frame */
   if (vStream_VideoIn->ReleaseBlock() != VSTREAM_OK) {
