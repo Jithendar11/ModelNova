@@ -27,9 +27,12 @@
 #define ALGO_DATA_IN_BLOCK_SIZE         (ML_IMAGE_WIDTH * ML_IMAGE_HEIGHT * 3U)
 #endif
 
-// Output Data block size, in bytes
 #ifndef ALGO_DATA_OUT_BLOCK_SIZE
-#define ALGO_DATA_OUT_BLOCK_SIZE        (MODEL_NUM_CLASSES * sizeof(float))
+#if defined(OUTPUT_PREDICTION_METADATA) && OUTPUT_PREDICTION_METADATA
+#define ALGO_DATA_OUT_BLOCK_SIZE    (120U)
+#else
+#define ALGO_DATA_OUT_BLOCK_SIZE    (MODEL_NUM_CLASSES * sizeof(float))
+#endif
 #endif
 
 #endif
