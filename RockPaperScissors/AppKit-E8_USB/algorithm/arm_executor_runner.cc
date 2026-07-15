@@ -953,9 +953,15 @@ void postprocess(RunnerContext& ctx, uint8_t* img_buf,
     print_outputs(ctx);
 
     /* Copy shortened label plus confidence into caller's output buffer */
+#if OUTPUT_PREDICTION_METADATA
+    if (out_num >= sizeof(output_label_t)) {
+        memcpy(out_buf, &output_label, sizeof(output_label));
+    }
+#else
     if (out_num >= sizeof(class_probs)) {
         memcpy(out_buf, class_probs, sizeof(class_probs));
     }
+#endif
 
     /* Only draw if label is valid */
     if (output_label.label_name[0] != '\0')

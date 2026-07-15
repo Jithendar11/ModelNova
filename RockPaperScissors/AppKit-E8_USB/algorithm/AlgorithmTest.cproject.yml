@@ -30,6 +30,7 @@ project:
     - ET_DEBUG_BUFFER_SIZE: 0x8000 
     - USE_PERFORMANCE_MONITOR
     - USE_SEGGER_SYSVIEW
+    - OUTPUT_PREDICTION_METADATA: 0
 
   setups:
     - setup: Scratch pool for non-simulator
